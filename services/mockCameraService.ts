@@ -1,9 +1,30 @@
-import { Camera, CameraStatus, StorageStats, RecordedMedia, FileNode, SystemConfig, AccessLog, SystemNotification, NotificationLevel } from '../types';
+import { Camera, CameraStatus, StorageStats, RecordedMedia, FileNode, SystemConfig, AccessLog, SystemNotification, NotificationLevel, User, DiscoveredDevice } from '../types';
 
 const STORAGE_KEY_CAMERAS = 'camhome_cameras';
 const STORAGE_KEY_CONFIG = 'camhome_config';
+const STORAGE_KEY_USERS = 'camhome_users';
 
-// Default Data (Used only if LocalStorage is empty)
+// --- MOCK DATA ---
+
+const DEFAULT_USERS: User[] = [
+  {
+    id: 'u1',
+    username: 'admin',
+    password: 'password',
+    name: 'Administrador',
+    role: 'ADMIN',
+    createdAt: new Date()
+  },
+  {
+    id: 'u2',
+    username: 'visitante',
+    password: '123',
+    name: 'Membro da Família',
+    role: 'USER',
+    createdAt: new Date()
+  }
+];
+
 const DEFAULT_CAMERAS: Camera[] = [
   {
     id: 'cam-demo-1',
@@ -20,102 +41,121 @@ const DEFAULT_CAMERAS: Camera[] = [
   }
 ];
 
+const DEFAULT_RECORDINGS: RecordedMedia[] = [
+  {
+    id: 'rec-1',
+    cameraId: 'cam-demo-1',
+    cameraName: 'Câmera Demo (Sala)',
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
+    thumbnailUrl: 'https://picsum.photos/800/600?random=10',
+    type: 'image',
+    aiTags: ['Pessoa', 'Movimento'],
+    userTags: ['Entregador']
+  },
+  {
+    id: 'rec-2',
+    cameraId: 'cam-demo-1',
+    cameraName: 'Câmera Demo (Sala)',
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
+    thumbnailUrl: 'https://picsum.photos/800/600?random=11',
+    type: 'video',
+    aiTags: ['Veículo', 'Suspeito'],
+  },
+  {
+    id: 'rec-3',
+    cameraId: 'cam-demo-1',
+    cameraName: 'Câmera Demo (Sala)',
+    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 48), // 2 days ago
+    thumbnailUrl: 'https://picsum.photos/800/600?random=12',
+    type: 'image',
+    aiTags: ['Cachorro', 'Quintal'],
+  }
+];
+
 let INITIAL_CONFIG: SystemConfig = {
   appName: 'CamHome',
-  username: 'admin',
-  password: 'password', // Default
   enableAuth: true,
   enableMfa: false,
   ddnsProvider: 'noip',
   ddnsHostname: 'minha-camera.ddns.net',
+  recordingPath: '/mnt/orange_drive_1tb/gravacoes',
   minAlertLevel: NotificationLevel.INFO,
   enableSound: true
 };
 
-// Helper to get cameras from storage
+let INITIAL_STORAGE: StorageStats = {
+  total: 1000, // 1TB
+  used: 450,
+  path: '/mnt/orange_drive_1tb',
+  label: 'Orange Drive 1TB',
+  isMounted: true
+};
+
+// --- HELPERS ---
+
 const getStoredCameras = (): Camera[] => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_CAMERAS);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (e) {
-    console.error("Erro ao ler LocalStorage", e);
-  }
-  return DEFAULT_CAMERAS;
+    return stored ? JSON.parse(stored) : DEFAULT_CAMERAS;
+  } catch (e) { return DEFAULT_CAMERAS; }
 };
 
-// Helper to save cameras
 const saveStoredCameras = (cameras: Camera[]) => {
   localStorage.setItem(STORAGE_KEY_CAMERAS, JSON.stringify(cameras));
 };
 
-// --- Mock Data for other services (Read-only for now) ---
-
-const INITIAL_STORAGE: StorageStats = {
-  total: 1000, // 1TB
-  used: 450,
-  path: '/mnt/orange_drive_1tb',
-  isMounted: true
+const getStoredUsers = (): User[] => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_USERS);
+    return stored ? JSON.parse(stored) : DEFAULT_USERS;
+  } catch (e) { return DEFAULT_USERS; }
 };
 
-const INITIAL_RECORDINGS: RecordedMedia[] = [
-  {
-    id: 'rec-1',
-    cameraId: 'cam-demo-1',
-    cameraName: 'Demo Sala',
-    timestamp: new Date(Date.now() - 1000 * 60 * 5), // 5 mins ago
-    thumbnailUrl: 'https://picsum.photos/800/600?random=10',
-    type: 'image',
-    aiTags: ['Pessoa', 'Entregador', 'Uniforme']
-  }
-];
+const saveStoredUsers = (users: User[]) => {
+  localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
+};
 
-const MOCK_FILE_SYSTEM: FileNode = {
-  id: 'root',
-  name: 'mnt',
-  type: 'folder',
-  children: [
-    {
-      id: 'drive-1',
-      name: 'orange_drive_1tb',
-      type: 'drive',
-      size: '1TB',
-      children: [
-        {
-          id: 'folder-rec',
-          name: 'gravacoes',
-          type: 'folder',
-          children: [
-             { id: 'date-1', name: '2023-10-25', type: 'folder', children: [{ id: 'f1', name: 'evt_01.jpg', type: 'file', size: '2MB'}] },
-          ]
-        },
-        { id: 'sys-log', name: 'sistema.log', type: 'file', size: '45KB' }
-      ]
+// --- SERVICES ---
+
+// Users & Auth
+export const fetchUsers = (): Promise<User[]> => {
+  return new Promise(resolve => setTimeout(() => resolve(getStoredUsers()), 300));
+};
+
+export const saveUser = (user: User): Promise<void> => {
+  return new Promise(resolve => {
+    const users = getStoredUsers();
+    const idx = users.findIndex(u => u.id === user.id);
+    if (idx >= 0) {
+      users[idx] = user;
+    } else {
+      users.push(user);
     }
-  ]
+    saveStoredUsers(users);
+    setTimeout(resolve, 400);
+  });
 };
 
-let MOCK_ACCESS_LOGS: AccessLog[] = [
-  { id: 'log-1', timestamp: new Date(Date.now() - 1000 * 60 * 30), user: 'admin', ip: '192.168.1.10', status: 'SUCCESS', method: 'PASSWORD' },
-];
+export const deleteUser = (id: string): Promise<void> => {
+  return new Promise(resolve => {
+    const users = getStoredUsers().filter(u => u.id !== id);
+    saveStoredUsers(users);
+    setTimeout(resolve, 400);
+  });
+};
 
-let MOCK_NOTIFICATIONS: SystemNotification[] = [
-  {
-    id: 'notif-0',
-    title: 'Bem-vindo ao CamHome',
-    message: 'Configure suas câmeras reais na aba Configurações.',
-    level: NotificationLevel.INFO,
-    timestamp: new Date(Date.now() - 1000 * 60 * 60),
-    read: false
-  }
-];
+export const authenticateUser = (username: string, password: string): Promise<User | null> => {
+  return new Promise(resolve => {
+    const users = getStoredUsers();
+    const user = users.find(u => u.username === username && u.password === password);
+    resolve(user || null);
+  });
+};
 
-// --- Services ---
 
+// Cameras
 export const fetchCameras = (): Promise<Camera[]> => {
   return new Promise((resolve) => {
-    // Return stored cameras instead of static mock
     setTimeout(() => resolve(getStoredCameras()), 500);
   });
 };
@@ -149,31 +189,71 @@ export const updateCamera = (updatedCamera: Camera): Promise<void> => {
   });
 };
 
-export const fetchStorageStats = (): Promise<StorageStats> => {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve({ ...INITIAL_STORAGE }), 500);
-  });
+// Network Scan (REAL API CALL)
+export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
+  try {
+    // Calls the Node.js backend to perform the Nmap scan
+    const response = await fetch('/api/scan');
+    
+    if (!response.ok) {
+        console.error("Scan failed");
+        return [];
+    }
+
+    const foundDevices: DiscoveredDevice[] = await response.json();
+    const existingIps = getStoredCameras().map(c => c.ip);
+
+    // Mark devices that are already added to the dashboard
+    return foundDevices.map(d => ({
+      ...d,
+      isAdded: existingIps.includes(d.ip)
+    }));
+
+  } catch (error) {
+    console.error("Network scan error. Ensure server is running.", error);
+    // Fallback if API fails (e.g., running in pure frontend dev mode without server)
+    return [];
+  }
 };
 
+// Recordings (Mock)
 export const fetchRecordings = (): Promise<RecordedMedia[]> => {
   return new Promise((resolve) => {
-    setTimeout(() => resolve([...INITIAL_RECORDINGS]), 600);
+    setTimeout(() => resolve(DEFAULT_RECORDINGS), 600);
   });
 };
 
-export const fetchFileSystem = (): Promise<FileNode> => {
-   return new Promise((resolve) => {
-    setTimeout(() => resolve(JSON.parse(JSON.stringify(MOCK_FILE_SYSTEM))), 600);
-  }); 
+// Storage
+export const fetchStorageStats = (): Promise<StorageStats> => {
+  return new Promise((resolve) => {
+    const config = getStoredConfigSync();
+    // Simulate updating path based on config
+    const stats = { ...INITIAL_STORAGE, path: config.recordingPath.split('/gravacoes')[0] };
+    setTimeout(() => resolve(stats), 500);
+  });
+};
+
+export const formatStorage = (path: string): Promise<void> => {
+  return new Promise(resolve => {
+    console.log(`Formatting ${path}...`);
+    setTimeout(() => {
+      INITIAL_STORAGE.used = 0; // Reset usage
+      resolve();
+    }, 3000);
+  });
+};
+
+// Config
+const getStoredConfigSync = (): SystemConfig => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_CONFIG);
+    return stored ? JSON.parse(stored) : INITIAL_CONFIG;
+  } catch (e) { return INITIAL_CONFIG; }
 };
 
 export const fetchSystemConfig = (): Promise<SystemConfig> => {
   return new Promise((resolve) => {
-    const stored = localStorage.getItem(STORAGE_KEY_CONFIG);
-    if (stored) {
-      INITIAL_CONFIG = JSON.parse(stored);
-    }
-    setTimeout(() => resolve({...INITIAL_CONFIG}), 400);
+    setTimeout(() => resolve(getStoredConfigSync()), 400);
   });
 };
 
@@ -185,56 +265,71 @@ export const updateSystemConfig = (newConfig: SystemConfig): Promise<void> => {
   });
 };
 
+// Filesystem
+const MOCK_FILE_SYSTEM: FileNode = {
+  id: 'root',
+  name: 'mnt',
+  type: 'folder',
+  path: '/mnt',
+  children: [
+    {
+      id: 'drive-1',
+      name: 'orange_drive_1tb',
+      type: 'drive',
+      path: '/mnt/orange_drive_1tb',
+      size: '1TB',
+      children: [
+        {
+          id: 'folder-rec',
+          name: 'gravacoes',
+          type: 'folder',
+          path: '/mnt/orange_drive_1tb/gravacoes',
+          children: []
+        },
+        { id: 'sys-log', name: 'sistema.log', type: 'file', path: '/mnt/orange_drive_1tb/sistema.log', size: '45KB' }
+      ]
+    },
+    {
+      id: 'drive-2',
+      name: 'usb_backup',
+      type: 'drive',
+      path: '/mnt/usb_backup',
+      size: '64GB',
+      children: []
+    }
+  ]
+};
+
+export const fetchFileSystem = (): Promise<FileNode> => {
+   return new Promise((resolve) => {
+    setTimeout(() => resolve(JSON.parse(JSON.stringify(MOCK_FILE_SYSTEM))), 600);
+  }); 
+};
+
+// Other
 export const fetchAccessLogs = (): Promise<AccessLog[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve([...MOCK_ACCESS_LOGS]), 400);
-  });
+  return new Promise((resolve) => resolve([]));
 };
 
 export const logAccessAttempt = (user: string, success: boolean, method: 'PASSWORD' | 'MFA') => {
-  MOCK_ACCESS_LOGS.unshift({
-    id: `log-${Date.now()}`,
-    timestamp: new Date(),
-    user,
-    ip: 'Localhost',
-    status: success ? 'SUCCESS' : 'FAILED',
-    method
-  });
+  console.log(`Login attempt: ${user} - ${success}`);
 };
 
 export const fetchNotifications = (): Promise<SystemNotification[]> => {
-  return new Promise((resolve) => {
-    resolve([...MOCK_NOTIFICATIONS].sort((a,b) => b.timestamp.getTime() - a.timestamp.getTime()));
-  });
+  return new Promise((resolve) => resolve([]));
 };
 
-export const markNotificationRead = (id: string) => {
-  const n = MOCK_NOTIFICATIONS.find(n => n.id === id);
-  if (n) n.read = true;
-};
+export const markNotificationRead = (id: string) => {};
 
-// Simulate scanning the network (still returns defaults if empty, or existing)
-export const scanForCameras = (): Promise<Camera[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve(getStoredCameras()); 
-    }, 2000);
-  });
-};
-
-// Simulate an event
 export const triggerMockEvent = () => {
-  const notification: SystemNotification = {
+    return {
     id: `evt-${Date.now()}`,
-    title: "Teste de Alerta",
-    message: "Isto é um evento simulado para testar notificações.",
-    level: NotificationLevel.WARNING,
+    title: "Teste",
+    message: "Teste",
+    level: NotificationLevel.INFO,
     timestamp: new Date(),
-    read: false,
-    cameraId: 'system'
-  };
-  MOCK_NOTIFICATIONS.push(notification);
-  return notification;
+    read: false
+  } as SystemNotification;
 };
 
 export const urlToBase64 = async (url: string, username?: string, password?: string): Promise<string> => {

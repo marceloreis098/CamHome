@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Camera, StorageStats, SystemConfig, SystemNotification, NotificationLevel } from './types';
-import { fetchCameras, addCamera, deleteCamera, fetchStorageStats, scanForCameras, updateCamera, fetchSystemConfig, logAccessAttempt, fetchNotifications, markNotificationRead, triggerMockEvent } from './services/mockCameraService';
+import { Camera, StorageStats, SystemConfig, SystemNotification, User } from './types';
+import { fetchCameras, addCamera, deleteCamera, fetchStorageStats, updateCamera, fetchSystemConfig, logAccessAttempt, fetchNotifications, markNotificationRead, triggerMockEvent, authenticateUser } from './services/mockCameraService';
 import CameraCard from './components/CameraCard';
 import StorageWidget from './components/StorageWidget';
 import SettingsPanel from './components/SettingsPanel';
@@ -8,7 +8,7 @@ import LibraryPanel from './components/LibraryPanel';
 import ReportsPanel from './components/ReportsPanel';
 import LoginScreen from './components/LoginScreen';
 import NotificationSystem from './components/NotificationSystem';
-import { CameraIcon, CogIcon, PhotoIcon, FileIcon } from './components/Icons';
+import { CameraIcon, CogIcon, PhotoIcon, FileIcon, UserIcon } from './components/Icons';
 
 type Tab = 'dashboard' | 'library' | 'reports' | 'settings';
 
@@ -19,7 +19,10 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  
+  // Auth State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   
   // Notification State
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
@@ -38,9 +41,12 @@ const App: React.FC = () => {
         setConfig(sysConfig);
         setNotifications(notifs);
         
-        // Auto-login if auth is disabled
+        // Auto-login if auth is disabled (Mocking an admin user for auto-login)
         if (!sysConfig.enableAuth) {
           setIsAuthenticated(true);
+          setCurrentUser({
+             id: 'auto', username: 'admin', name: 'Admin (Auto)', role: 'ADMIN', password: '', createdAt: new Date()
+          });
         }
       } catch (error) {
         console.error("Falha ao carregar dados do sistema", error);
@@ -58,23 +64,10 @@ const App: React.FC = () => {
     const intervalId = setInterval(async () => {
        const notifs = await fetchNotifications();
        setNotifications(notifs);
-    }, 5000); // Check every 5 seconds
+    }, 5000); 
 
     return () => clearInterval(intervalId);
   }, [isAuthenticated]);
-
-  const handleScan = async () => {
-    setScanning(true);
-    try {
-      const results = await scanForCameras();
-      setCameras(results);
-      alert("Varredura de rede completa. Status atualizados.");
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setScanning(false);
-    }
-  };
 
   const handleUpdateCamera = async (updatedCamera: Camera) => {
     await updateCamera(updatedCamera);
@@ -91,31 +84,25 @@ const App: React.FC = () => {
     setCameras(prev => prev.filter(c => c.id !== id));
   };
 
-  const handleLogin = (password: string, mfaToken?: string) => {
-    if (!config) return false;
-
-    // Check Password
-    if (password !== config.password) {
-      logAccessAttempt('admin', false, 'PASSWORD');
-      return false;
-    }
-
-    // Check MFA
-    if (config.enableMfa) {
-      if (mfaToken === '123456') { // Mock Token
+  const handleLogin = async (username: string, password: string, mfaToken?: string) => {
+    const user = await authenticateUser(username, password);
+    
+    if (user) {
+        // MFA Check logic would go here if enabled in config
         setIsAuthenticated(true);
-        logAccessAttempt('admin', true, 'MFA');
+        setCurrentUser(user);
+        logAccessAttempt(username, true, 'PASSWORD');
         return true;
-      } else {
-        logAccessAttempt('admin', false, 'MFA');
-        return false;
-      }
     }
 
-    // Success (No MFA)
-    setIsAuthenticated(true);
-    logAccessAttempt('admin', true, 'PASSWORD');
-    return true;
+    logAccessAttempt(username, false, 'PASSWORD');
+    return false;
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setActiveTab('dashboard');
   };
 
   const handleMarkAsRead = (id: string) => {
@@ -129,7 +116,6 @@ const App: React.FC = () => {
   };
 
   const handleSimulateEvent = () => {
-    // Manually trigger an event (for demo purposes)
     const newNotif = triggerMockEvent();
     setNotifications(prev => [newNotif, ...prev]);
   };
@@ -178,16 +164,12 @@ const App: React.FC = () => {
             </div>
             
             <div className="flex items-center gap-4">
-               {activeTab === 'dashboard' && (
-                 <button 
-                    onClick={handleScan}
-                    disabled={scanning}
-                    className={`hidden md:block text-sm px-4 py-2 rounded-md border border-gray-700 bg-gray-800 hover:bg-gray-700 transition-colors ${scanning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                 >
-                   {scanning ? 'Escaneando...' : 'Escanear Rede'}
-                 </button>
-               )}
-               
+               {/* User Info */}
+               <div className="hidden md:flex flex-col items-end mr-2">
+                  <span className="text-xs font-bold text-white">{currentUser?.name}</span>
+                  <span className="text-[10px] text-orange-400 uppercase">{currentUser?.role === 'ADMIN' ? 'Administrador' : 'Usuário'}</span>
+               </div>
+
                {/* Notification System Integration */}
                {config && (
                  <NotificationSystem 
@@ -213,20 +195,27 @@ const App: React.FC = () => {
                     <PhotoIcon className="w-4 h-4" />
                     Biblioteca
                   </button>
-                  <button 
-                    onClick={() => setActiveTab('reports')}
-                    className={`hidden md:flex px-3 py-1.5 rounded-md text-sm transition-all items-center gap-2 ${activeTab === 'reports' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-                  >
-                    <FileIcon className="w-4 h-4" />
-                    Relatórios
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('settings')}
-                    className={`px-3 py-1.5 rounded-md text-sm transition-all flex items-center gap-2 ${activeTab === 'settings' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-                  >
-                    <CogIcon className="w-4 h-4" />
-                  </button>
+                  
+                  {currentUser?.role === 'ADMIN' && (
+                    <>
+                      <button 
+                        onClick={() => setActiveTab('reports')}
+                        className={`hidden md:flex px-3 py-1.5 rounded-md text-sm transition-all items-center gap-2 ${activeTab === 'reports' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                      >
+                        <FileIcon className="w-4 h-4" />
+                        Relatórios
+                      </button>
+                      <button 
+                        onClick={() => setActiveTab('settings')}
+                        className={`px-3 py-1.5 rounded-md text-sm transition-all flex items-center gap-2 ${activeTab === 'settings' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                      >
+                        <CogIcon className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
                </div>
+               
+               <button onClick={handleLogout} className="text-xs text-red-400 hover:text-red-300 ml-2">Sair</button>
             </div>
           </div>
         </div>
@@ -236,29 +225,28 @@ const App: React.FC = () => {
         
         {activeTab === 'dashboard' && (
           <>
-            {/* Dashboard Header */}
             <div className="flex flex-col md:flex-row gap-6">
               <div className="flex-1">
                 <h2 className="text-2xl font-bold mb-2">Visão Geral do Sistema</h2>
                 <p className="text-gray-400">
                   Monitorando {cameras.length} câmeras ativas na rede local. 
-                  Imagens sendo gravadas no armazenamento externo.
+                  {currentUser?.role === 'ADMIN' ? ' Acesso total concedido.' : ' Acesso de visualização.'}
                 </p>
                 
-                {/* Debug Button for Testing Notifications */}
-                <button 
-                  onClick={handleSimulateEvent}
-                  className="mt-4 text-xs bg-gray-800 border border-gray-600 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded transition-colors"
-                >
-                  [Debug] Simular Evento Crítico
-                </button>
+                {currentUser?.role === 'ADMIN' && (
+                  <button 
+                    onClick={handleSimulateEvent}
+                    className="mt-4 text-xs bg-gray-800 border border-gray-600 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded transition-colors"
+                  >
+                    [Debug] Simular Evento Crítico
+                  </button>
+                )}
               </div>
               <div className="w-full md:w-1/3 lg:w-1/4">
                  {storage && <StorageWidget stats={storage} />}
               </div>
             </div>
 
-            {/* Camera Grid */}
             <div>
               <div className="flex items-center justify-between mb-4">
                  <h3 className="text-xl font-semibold flex items-center gap-2">
@@ -274,42 +262,12 @@ const App: React.FC = () => {
                 {cameras.length === 0 && (
                    <div className="col-span-2 text-center py-10 bg-gray-800 rounded-lg border border-gray-700 border-dashed">
                       <p className="text-gray-400 mb-2">Nenhuma câmera configurada.</p>
-                      <button onClick={() => setActiveTab('settings')} className="text-orange-500 hover:underline">Ir para configurações</button>
+                      {currentUser?.role === 'ADMIN' && (
+                        <button onClick={() => setActiveTab('settings')} className="text-orange-500 hover:underline">Ir para configurações</button>
+                      )}
                    </div>
                 )}
               </div>
-            </div>
-
-            {/* Quick Config / Info Panel */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 border-t border-gray-800">
-               <div className="p-6 bg-gray-800/50 rounded-xl border border-gray-700/50">
-                  <h4 className="font-bold text-orange-400 mb-2">Hardware</h4>
-                  <ul className="space-y-2 text-sm text-gray-300">
-                    <li className="flex justify-between"><span>Dispositivo:</span> <span className="text-white">Orange Pi 5</span></li>
-                    <li className="flex justify-between"><span>Sistema:</span> <span className="text-white">Ubuntu Server 22.04</span></li>
-                    <li className="flex justify-between"><span>Tempo Ligado:</span> <span className="text-white">3d 4h 12m</span></li>
-                  </ul>
-               </div>
-
-               <div className="p-6 bg-gray-800/50 rounded-xl border border-gray-700/50">
-                  <h4 className="font-bold text-blue-400 mb-2">Rede</h4>
-                  <ul className="space-y-2 text-sm text-gray-300">
-                    <li className="flex justify-between"><span>Gateway:</span> <span className="font-mono text-white">192.168.1.1</span></li>
-                    <li className="flex justify-between"><span>Subnet:</span> <span className="font-mono text-white">255.255.255.0</span></li>
-                    <li className="flex justify-between"><span>Interface:</span> <span className="font-mono text-white">eth0</span></li>
-                  </ul>
-               </div>
-
-               <div className="p-6 bg-gray-800/50 rounded-xl border border-gray-700/50">
-                  <h4 className="font-bold text-purple-400 mb-2">Módulo IA</h4>
-                  <p className="text-sm text-gray-400 mb-3">
-                    Powered by Gemini 2.5 Flash para detecção de objetos em tempo real e análise de anomalias nos snapshots.
-                  </p>
-                  <div className="flex items-center gap-2 text-xs text-green-400">
-                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                    <span>API Conectada</span>
-                  </div>
-               </div>
             </div>
           </>
         )}
@@ -318,17 +276,19 @@ const App: React.FC = () => {
           <LibraryPanel />
         )}
 
-        {activeTab === 'reports' && (
+        {/* Protected Tabs */}
+        {activeTab === 'reports' && currentUser?.role === 'ADMIN' && (
           <ReportsPanel />
         )}
 
-        {activeTab === 'settings' && (
+        {activeTab === 'settings' && currentUser?.role === 'ADMIN' && (
           <SettingsPanel 
             cameras={cameras} 
             onUpdateCamera={handleUpdateCamera}
             onAddCamera={handleAddCamera}
             onDeleteCamera={handleDeleteCamera}
             onConfigChange={setConfig}
+            currentUser={currentUser}
           />
         )}
 

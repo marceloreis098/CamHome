@@ -24,11 +24,20 @@ export interface Camera {
   externalTraffic?: boolean; // Indicates if cam talks to china/external clouds
 }
 
+export interface DiscoveredDevice {
+  ip: string;
+  mac: string;
+  manufacturer: string;
+  model: string;
+  isAdded: boolean;
+}
+
 export interface StorageStats {
   total: number; // in GB
   used: number; // in GB
   path: string;
   isMounted: boolean;
+  label: string; // e.g. "Samsung SSD"
 }
 
 export interface AnalysisResult {
@@ -69,6 +78,7 @@ export interface FileNode {
   name: string;
   type: 'file' | 'folder' | 'drive';
   size?: string;
+  path: string; // Full path
   children?: FileNode[];
   isOpen?: boolean; // For UI state
 }
@@ -89,16 +99,28 @@ export interface SystemNotification {
   cameraId?: string;
 }
 
+export type UserRole = 'ADMIN' | 'USER';
+
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  password: string; // Plaintext for mock, hashed in real
+  role: UserRole;
+  createdAt: Date;
+}
+
 export interface SystemConfig {
   appName: string;
   logoUrl?: string;
-  username: string;
-  password?: string; // In real app, this is hashed
+  // username/password deprecated in favor of User[] list
   enableAuth: boolean;
   enableMfa: boolean; // Multi-factor auth state
   mfaSecret?: string;
   ddnsProvider?: 'noip' | 'duckdns' | 'custom';
   ddnsHostname?: string;
+  // Storage
+  recordingPath: string;
   // Notification Settings
   minAlertLevel: NotificationLevel; // Minimum level to show popup toast
   enableSound: boolean;

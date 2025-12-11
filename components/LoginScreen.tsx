@@ -1,23 +1,23 @@
 import React, { useState } from 'react';
-import { CameraIcon, LockIcon, SmartphoneIcon } from './Icons';
+import { CameraIcon, LockIcon, SmartphoneIcon, UserIcon } from './Icons';
 
 interface LoginScreenProps {
-  onLogin: (password: string, mfaToken?: string) => boolean;
+  onLogin: (username: string, password: string, mfaToken?: string) => Promise<boolean> | boolean;
   appName: string;
   mfaEnabled: boolean;
 }
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, appName, mfaEnabled }) => {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [mfaToken, setMfaToken] = useState('');
   const [error, setError] = useState(false);
-  const [step, setStep] = useState<1 | 2>(1); // 1 = Password, 2 = MFA
+  const [step, setStep] = useState<1 | 2>(1); // 1 = Creds, 2 = MFA
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mfaEnabled && step === 1) {
-      // Validate password first in a real app, here we assume it's right and move to step 2 if not empty
-      if(password) {
+      if(password && username) {
         setStep(2);
         setError(false);
       } else {
@@ -26,7 +26,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, appName, mfaEnabled 
       return;
     }
 
-    const success = onLogin(password, mfaToken);
+    const success = await onLogin(username, password, mfaToken);
     if (!success) {
       setError(true);
       if(!mfaEnabled) setPassword('');
@@ -46,22 +46,42 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, appName, mfaEnabled 
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {step === 1 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Senha de Acesso</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <LockIcon className="h-5 w-5 text-gray-500" />
+            <div className="space-y-4">
+               <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Usuário</label>
+                <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <UserIcon className="h-5 w-5 text-gray-500" />
+                    </div>
+                    <input
+                    type="text"
+                    className="block w-full pl-10 bg-gray-900 border border-gray-600 rounded-lg py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                    placeholder="admin"
+                    value={username}
+                    onChange={(e) => {
+                        setUsername(e.target.value);
+                        setError(false);
+                    }}
+                    />
                 </div>
-                <input
-                  type="password"
-                  className="block w-full pl-10 bg-gray-900 border border-gray-600 rounded-lg py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
-                  placeholder="Digite a senha de admin"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    setError(false);
-                  }}
-                />
+              </div> 
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Senha</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <LockIcon className="h-5 w-5 text-gray-500" />
+                  </div>
+                  <input
+                    type="password"
+                    className="block w-full pl-10 bg-gray-900 border border-gray-600 rounded-lg py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                    placeholder="••••••"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setError(false);
+                    }}
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -88,7 +108,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, appName, mfaEnabled 
           )}
 
           {error && <p className="text-red-500 text-xs mt-2 animate-pulse text-center">
-            {step === 2 ? 'Código MFA incorreto.' : 'Senha incorreta. Tente novamente.'}
+            {step === 2 ? 'Código MFA incorreto.' : 'Usuário ou Senha incorretos.'}
           </p>}
 
           <button
