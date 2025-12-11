@@ -13,31 +13,35 @@ Sistema de vigilância leve e inteligente projetado para Orange Pi (Ubuntu Serve
 
 ## 🚀 Instalação Automática (Recomendado)
 
-Siga estes passos para colocar o servidor no ar em poucos minutos usando o script incluso.
+Siga estes passos para colocar o servidor no ar em poucos minutos.
 
-### 1. Obter o Código (Via Git)
-Primeiro, instale o Git no seu servidor e clone o repositório do projeto:
+### 1. Preparar e Baixar (Via Git)
+Instale o git e baixe os arquivos do projeto para o seu Orange Pi.
 
 ```bash
-# Atualiza pacotes e instala o Git
+# 1.1 Atualizar pacotes e instalar Git
 sudo apt update && sudo apt install -y git
 
-# Clone o repositório (substitua pela URL do seu repositório)
+# 1.2 Clonar o repositório
 git clone https://github.com/seu-usuario/orangeguard.git
 
-# Entre na pasta do projeto
+# 1.3 Entrar na pasta do projeto
 cd orangeguard
 ```
 
-### 2. Preparar o Script
-Dê permissão de execução ao instalador:
+### 2. Corrigir e Preparar Script
+**Importante:** Execute estes comandos para corrigir problemas de formatação de arquivo (erro "No such file") e dar permissão de execução.
 
 ```bash
+# Remove caracteres do Windows (CRLF) que causam erro no Linux
+sed -i 's/\r$//' install.sh
+
+# Torna o script executável
 chmod +x install.sh
 ```
 
 ### 3. Executar Instalação
-Execute o script com privilégios de superusuário (root). O script irá instalar o Node.js, Nginx, configurar o Firewall e compilar a aplicação.
+Agora que o arquivo está corrigido, inicie a instalação automática.
 
 ```bash
 sudo ./install.sh
@@ -47,121 +51,32 @@ sudo ./install.sh
 
 ---
 
-## 🔧 Instalação Manual (Passo a Passo)
+## 🆘 Solução de Problemas
 
-Caso prefira configurar o ambiente manualmente sem usar o script, siga as etapas abaixo:
-
-### 1. Atualizar o Sistema e Instalar Dependências
-Atualize o Ubuntu e instale o curl:
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y curl build-essential
-```
-
-### 2. Instalar Node.js 20 (LTS)
-Adicione o repositório oficial do Node e instale:
-```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-```
-
-### 3. Instalar e Configurar Nginx
-Instale o servidor web:
-```bash
-sudo apt install -y nginx
-```
-
-Crie o arquivo de configuração do site:
-```bash
-sudo nano /etc/nginx/sites-available/orangeguard
-```
-Cole o conteúdo abaixo e salve (Ctrl+O, Enter, Ctrl+X):
-```nginx
-server {
-    listen 80;
-    server_name _;
-
-    root /var/www/orangeguard;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
-
-Ative o site e remova o padrão:
-```bash
-sudo ln -s /etc/nginx/sites-available/orangeguard /etc/nginx/sites-enabled/
-sudo rm /etc/nginx/sites-enabled/default
-```
-
-### 4. Compilar a Aplicação
-Dentro da pasta do projeto, instale as dependências e faça o build:
-```bash
-npm install
-npm run build
-```
-
-Mova os arquivos gerados para a pasta do servidor web:
-```bash
-sudo mkdir -p /var/www/orangeguard
-sudo cp -r dist/* /var/www/orangeguard/
-sudo chown -R www-data:www-data /var/www/orangeguard
-sudo chmod -R 755 /var/www/orangeguard
-```
-
-Reinicie o Nginx:
-```bash
-sudo systemctl restart nginx
-```
-
-### 5. Configurar Diretórios e Firewall
-Crie o ponto de montagem para o HD e configure as portas:
-```bash
-sudo mkdir -p /mnt/orange_drive_1tb
-sudo chmod 777 /mnt/orange_drive_1tb
-
-sudo ufw allow 22
-sudo ufw allow 80
-sudo ufw enable
-```
+### Erro: `unable to execute ./install.sh: No such file or directory`
+Se você ver este erro, significa que o passo 2 foi pulado ou falhou. O Linux não consegue ler o arquivo criado no Windows.
+**Solução:** Execute `sed -i 's/\r$//' install.sh` e tente novamente.
 
 ---
 
-## ⚙️ Configuração Pós-Instalação
+## 🔧 Instalação Manual
 
-### Acessar o Painel
-Abra o navegador em qualquer computador na mesma rede e digite o IP do Orange Pi.
+Se o script falhar, você pode fazer manualmente:
 
-**Login Padrão:**
-- **Usuário:** `admin`
-- **Senha:** `password`
-
-### Configurar Câmeras
-1. No menu lateral, clique no ícone de engrenagem (Configurações).
-2. Vá na seção **Dispositivos**.
-3. Verifique se os IPs estão corretos:
-   - Câmera 1: `192.168.1.2`
-   - Câmera 2: `192.168.1.25`
-
-### Montagem do HD
-Para garantir que seu HD USB monte automaticamente na pasta `/mnt/orange_drive_1tb` após reiniciar:
-
-1. Descubra o UUID do disco: `sudo blkid`
-2. Edite o fstab: `sudo nano /etc/fstab`
-3. Adicione a linha ao final do arquivo: 
-   ```text
-   UUID=SEU_UUID_AQUI /mnt/orange_drive_1tb ext4 defaults 0 0
+1. **Instalar Node.js 20 e Nginx:**
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+   sudo apt install -y nodejs nginx
    ```
 
----
+2. **Compilar o Projeto:**
+   ```bash
+   npm install
+   npm run build
+   ```
 
-## 🛠️ Comandos Úteis
+3. **Configurar Nginx:**
+   Copie os arquivos de `dist/` para `/var/www/orangeguard` e aponte o Nginx para lá.
 
-- **Ver logs do Nginx:** `sudo tail -f /var/log/nginx/error.log`
-- **Reiniciar servidor web:** `sudo systemctl restart nginx`
-- **Atualizar a aplicação:**
-  1. Faça as alterações no código localmente.
-  2. Rode `npm run build`.
-  3. Copie a pasta `dist` para `/var/www/orangeguard` no Orange Pi.
+4. **Diretórios:**
+   Crie a pasta `/mnt/orange_drive_1tb` para simular o HD externo.
