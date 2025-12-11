@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Camera, CameraStatus, FileNode, SystemConfig, AccessLog, NotificationLevel, User, DiscoveredDevice } from '../types';
 import { fetchFileSystem, fetchSystemConfig, updateSystemConfig, fetchAccessLogs, fetchUsers, saveUser, deleteUser, scanNetworkForDevices, formatStorage } from '../services/mockCameraService';
@@ -50,6 +51,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
 
   // Storage State
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+
+  // New Camera State
+  const [useHttps, setUseHttps] = useState(false);
 
   useEffect(() => {
     if (activeSection === 'storage-config' && !fileSystem) {
@@ -119,12 +123,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
     setLoading(false);
     setActiveSection('camera-config');
     setSelectedCameraId(newCam.id);
+    setUseHttps(false); // Reset
     alert('Nova câmera adicionada com sucesso!');
   };
 
   const handleAddFromScan = (device: ExtendedDiscoveredDevice) => {
     // Open the new camera form with pre-filled data
     setActiveSection('new-camera');
+    setUseHttps(false); // Default to HTTP, let user toggle
+
     // We use a timeout to let the DOM render the form, then populate inputs
     setTimeout(() => {
         const nameInput = document.querySelector('input[name="name"]') as HTMLInputElement;
@@ -151,16 +158,38 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
     }, 100);
   };
 
+  const handleHttpsToggle = (checked: boolean) => {
+      setUseHttps(checked);
+      const urlInput = document.querySelector('input[name="thumbnailUrl"]') as HTMLInputElement;
+      const ipInput = document.querySelector('input[name="ip"]') as HTMLInputElement;
+      
+      if (urlInput && urlInput.value) {
+          if (checked) {
+              urlInput.value = urlInput.value.replace('http://', 'https://');
+          } else {
+              urlInput.value = urlInput.value.replace('https://', 'http://');
+          }
+      } else if (checked && urlInput && ipInput && ipInput.value) {
+          // If empty but checked and we have IP, construct basic https
+          urlInput.value = `https://${ipInput.value}/snapshot.jpg`;
+      }
+  };
+
   const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const selected = CAMERA_PRESETS.find(p => p.value === e.target.value);
       if (selected && selected.value) {
           const ipInput = document.querySelector('input[name="ip"]') as HTMLInputElement;
           const urlInput = document.querySelector('input[name="thumbnailUrl"]') as HTMLInputElement;
           
+          let template = selected.url;
+          if (useHttps) {
+              template = template.replace('http://', 'https://');
+          }
+
           if (ipInput && ipInput.value) {
-              urlInput.value = selected.url.replace('[IP]', ipInput.value);
+              urlInput.value = template.replace('[IP]', ipInput.value);
           } else {
-              urlInput.value = selected.url;
+              urlInput.value = template;
           }
       }
   };
@@ -478,6 +507,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                             <input required name="ip" placeholder="Ex: 192.168.1.25" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
                         </div>
                     </div>
+                    
+                    {/* HTTPS Toggle */}
+                    <div className="flex items-center gap-3 bg-gray-900/50 p-3 rounded-lg border border-gray-700/50">
+                        <div className="flex items-center h-5">
+                            <input 
+                                id="https_toggle" 
+                                type="checkbox" 
+                                checked={useHttps}
+                                onChange={(e) => handleHttpsToggle(e.target.checked)}
+                                className="w-4 h-4 text-orange-600 bg-gray-700 border-gray-600 rounded focus:ring-orange-500 focus:ring-2" 
+                            />
+                        </div>
+                        <div className="text-sm">
+                            <label htmlFor="https_toggle" className="font-medium text-white">Usar Conexão Segura (HTTPS)</label>
+                            <p className="text-xs text-gray-500">Marque se sua câmera requer SSL/TLS (Porta 443).</p>
+                        </div>
+                    </div>
 
                     <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
                          <div className="mb-4">
@@ -496,9 +542,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                     </div>
                     
                     <div>
-                        <label className="block text-sm text-gray-400 mb-1">URL Snapshot (HTTP - Obrigatório para Visualização Web)</label>
-                        <input required name="thumbnailUrl" placeholder="http://192.168.1.X/snapshot.cgi..." className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
-                        <p className="text-[10px] text-gray-500 mt-1">Esta URL permite ver a câmera no painel. Navegadores não rodam RTSP nativamente.</p>
+                        <label className="block text-sm text-gray-400 mb-1">URL Snapshot (HTTP/HTTPS)</label>
+                        <input required name="thumbnailUrl" placeholder={useHttps ? "https://192.168.1.X/snapshot.cgi..." : "http://192.168.1.X/snapshot.cgi..."} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                        <p className="text-[10px] text-gray-500 mt-1">Esta URL permite ver a câmera no painel.</p>
                     </div>
 
                     <div>
