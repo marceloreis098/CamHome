@@ -7,6 +7,15 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Enable CORS (Cross-Origin Resource Sharing)
+// This allows the frontend (port 1234 or 80) to talk to this backend (port 3000) directly
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*"); // Allow any origin (for local dev)
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    next();
+});
+
 // Serve static files from the React build folder (dist)
 app.use(express.static(path.join(__dirname, 'dist')));
 app.use(express.json());
@@ -177,170 +186,4 @@ app.post('/api/storage/format', async (req, res) => {
         // Check if path exists
         if (fs.existsSync(targetPath)) {
              // Remove all files recursively (Simulates formatting a partition mount point)
-             await fs.promises.rm(targetPath, { recursive: true, force: true });
-        }
-        
-        // Recreate the empty folder immediately so recording can continue
-        await fs.promises.mkdir(targetPath, { recursive: true });
-
-        console.log(`[Storage] Limpeza concluída em: ${targetPath}`);
-        res.json({ success: true, message: "Diretório limpo com sucesso." });
-    } catch (error) {
-        console.error(`[Storage] Erro ao formatar:`, error);
-        res.status(500).json({ error: `Falha ao limpar disco: ${error.message}` });
-    }
-});
-
-// 2. Real File System Tree API
-app.get('/api/storage/tree', async (req, res) => {
-    try {
-        // We scan common mount points on Linux/Ubuntu
-        // /mnt is standard for manual mounts
-        // /media is standard for auto-mounted USBs (Ubuntu desktop behavior)
-        
-        const mntChildren = await getDirRecursive('/mnt', 0, 3);
-        const mediaChildren = await getDirRecursive('/media', 0, 3);
-        
-        // Construct the root of our file explorer
-        const rootNode = {
-            id: 'root-system',
-            name: 'Armazenamento do Servidor',
-            type: 'folder',
-            path: '/',
-            children: [
-                {
-                    id: '/mnt',
-                    name: 'mnt (Montagens)',
-                    type: 'folder',
-                    path: '/mnt',
-                    children: mntChildren
-                },
-                {
-                    id: '/media',
-                    name: 'media (USB/Removível)',
-                    type: 'folder',
-                    path: '/media',
-                    children: mediaChildren
-                }
-            ]
-        };
-
-        res.json(rootNode);
-    } catch (e) {
-        console.error("[Storage] Tree Error:", e);
-        res.status(500).json({ 
-            error: "Falha ao ler sistema de arquivos.",
-            fallback: true
-        });
-    }
-});
-
-// 3. Network Scan API
-app.get('/api/scan', (req, res) => {
-    const subnet = getLocalNetwork();
-    console.log(`[Scanner] Iniciando scan em: ${subnet}`);
-    console.log(`[Scanner] Nota: Certifique-se de rodar este script com 'sudo' para melhores resultados.`);
-
-    const ports = "80,554";
-    
-    // Attempt to use 'nmap' directly, fallback to common linux path
-    let command = `nmap -p ${ports} --open -oG - -T4 ${subnet}`;
-    
-    if (fs.existsSync('/usr/bin/nmap')) {
-         command = `/usr/bin/nmap -p ${ports} --open -oG - -T4 ${subnet}`;
-    }
-
-    exec(command, (error, stdout, stderr) => {
-        if (error) {
-            console.error(`[Scanner] Error: ${error.message}`);
-            if (error.message.includes('not found')) {
-                return res.status(500).json({ error: "Nmap não instalado. Execute: sudo apt install nmap" });
-            }
-            return res.status(500).json({ error: `Falha na execução do Nmap: ${error.message}` });
-        }
-
-        const arpTable = getArpTable();
-        const devices = [];
-        const lines = stdout.split('\n');
-
-        lines.forEach(line => {
-            if (line.includes('Host:') && line.includes('Ports:')) {
-                const ipMatch = line.match(/Host: ([0-9.]+)/);
-                const ip = ipMatch ? ipMatch[1] : null;
-                
-                if (ip) {
-                    const mac = arpTable[ip] || "00:00:00:00:00:00";
-                    let manufacturer = identifyVendor(mac);
-                    let model = "Câmera IP";
-                    let suggestedUrl = "";
-
-                    const has8000 = line.includes('8000/open'); // Hikvision
-                    const has37777 = line.includes('37777/open'); // Dahua
-                    const has8899 = line.includes('8899/open'); // ONVIF
-                    const has8080 = line.includes('8080/open'); // HTTP Alt / gSOAP
-                    const has554 = line.includes('554/open'); // RTSP
-                    const has81 = line.includes('81/open'); // Vstarcam Alt
-                    const has34567 = line.includes('34567/open'); // XiongMai
-                    const has5000 = line.includes('5000/open');   // Yoosee/ONVIF
-                    const has1935 = line.includes('1935/open');   // RTMP
-
-                    if (has8000 && manufacturer === 'Genérico') manufacturer = 'Hikvision (Detectado por Porta)';
-                    if (has37777 && manufacturer === 'Genérico') manufacturer = 'Dahua/Intelbras (Detectado por Porta)';
-                    
-                    if (manufacturer.includes('Vstarcam')) {
-                        model = "Vstarcam / Eye4 IP Cam";
-                    } else if (has34567) {
-                        model = "Câmera XiongMai (XM / CMS)";
-                        manufacturer = "XiongMai/Generic";
-                    } else if (has5000) {
-                         model = "Câmera Yoosee / ONVIF";
-                    } else if (has8080 && has554) {
-                        model = "Câmera ONVIF / gSOAP (Porta 8080)";
-                    } else if (has554) {
-                        model = "Câmera RTSP/ONVIF";
-                    } else if (line.includes('80/open') || has8080) {
-                        model = "Webcam / Web Server";
-                    }
-
-                    if (URL_PATTERNS[manufacturer]) {
-                         suggestedUrl = URL_PATTERNS[manufacturer].replace('[IP]', ip);
-                    } 
-                    else if (manufacturer.includes('Hikvision')) {
-                        suggestedUrl = URL_PATTERNS['Hikvision'].replace('[IP]', ip);
-                    } else if (manufacturer.includes('Dahua') || manufacturer.includes('Intelbras')) {
-                        suggestedUrl = URL_PATTERNS['Dahua/Intelbras'].replace('[IP]', ip);
-                    } else if (manufacturer.includes('Vstarcam') || has81) {
-                         suggestedUrl = `http://${ip}/snapshot.cgi?user=[USER]&pwd=[PASS]`;
-                    } else if (has8080) {
-                         suggestedUrl = `http://${ip}:8080/onvif/snapshot`; 
-                    } else if (has34567) {
-                         suggestedUrl = `http://${ip}/snap.jpg`;
-                    } else {
-                        suggestedUrl = `http://${ip}/snapshot.jpg`;
-                    }
-
-                    devices.push({
-                        ip: ip,
-                        mac: mac,
-                        manufacturer: manufacturer,
-                        model: model,
-                        isAdded: false,
-                        suggestedUrl: suggestedUrl
-                    });
-                }
-            }
-        });
-
-        console.log(`[Scanner] Encontrados ${devices.length} dispositivos.`);
-        res.json(devices);
-    });
-});
-
-// Handle React Routing
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-
-app.listen(PORT, () => {
-    console.log(`Servidor rodando em http://localhost:${PORT}`);
-});
+             await fs.promises.rm(targetPath, { recursive:

@@ -52,6 +52,17 @@ let INITIAL_STORAGE: StorageStats = {
 
 // --- HELPERS ---
 
+// INTELLIGENT API ROUTING
+// If running on dev port (1234), point to backend port (3000).
+// If running in production (port 80/nginx), use relative path.
+const getApiUrl = (endpoint: string) => {
+    const isDev = process.env.NODE_ENV === 'development' || window.location.port === '1234';
+    if (isDev) {
+        return `http://${window.location.hostname}:3000${endpoint}`;
+    }
+    return endpoint;
+};
+
 const getStoredCameras = (): Camera[] => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_CAMERAS);
@@ -161,18 +172,17 @@ export const updateCamera = (updatedCamera: Camera): Promise<void> => {
 // Network Scan (REAL API CALL)
 export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
   try {
-    // We explicitly request JSON to avoid getting HTML from some default server configs
-    const response = await fetch('/api/scan', {
+    // Uses getApiUrl to handle dev vs prod environment
+    const response = await fetch(getApiUrl('/api/scan'), {
         headers: { 'Accept': 'application/json' }
     });
 
     const responseText = await response.text(); 
     
     // 1. Check if response is HTML (Common Nginx/Proxy Error)
-    // If it starts with <, it's almost certainly HTML (e.g. <!DOCTYPE html> or <html>)
     if (responseText.trim().startsWith('<')) {
          console.error("ERRO CRÍTICO: API retornou HTML.", responseText.substring(0, 100));
-         throw new Error("Erro de Configuração do Servidor: O sistema recebeu uma página Web em vez de dados (JSON). Isso geralmente significa que o Nginx não está redirecionando o caminho /api/ para a porta 3000, ou você não reiniciou o Nginx após configurar.");
+         throw new Error("Erro de Configuração do Servidor: O sistema recebeu uma página Web em vez de dados (JSON). Verifique se o backend (server.js) está rodando na porta 3000.");
     }
 
     // 2. Try parse JSON
@@ -222,7 +232,7 @@ export const fetchStorageStats = (): Promise<StorageStats> => {
 
 export const formatStorage = async (path: string): Promise<void> => {
     try {
-        const res = await fetch('/api/storage/format', {
+        const res = await fetch(getApiUrl('/api/storage/format'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path })
@@ -294,11 +304,11 @@ const MOCK_FILE_SYSTEM_FALLBACK: FileNode = {
 
 export const fetchFileSystem = async (): Promise<FileNode> => {
     try {
-        const response = await fetch('/api/storage/tree');
+        const response = await fetch(getApiUrl('/api/storage/tree'));
         const responseText = await response.text();
 
         if (responseText.trim().startsWith('<')) {
-             console.warn("FS Tree recebeu HTML. Backend offline ou Proxy erro.");
+             console.warn("FS Tree recebeu HTML. Backend offline ou Erro de rota.");
              return MOCK_FILE_SYSTEM_FALLBACK;
         }
 
