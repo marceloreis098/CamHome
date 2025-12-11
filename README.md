@@ -10,65 +10,54 @@ Sistema de vigilância leve e inteligente projetado para Orange Pi rodando Ubunt
 
 ---
 
-## 🚀 Instalação Rápida (Recomendada)
-
-Dentro da pasta do projeto, rode o script de configuração automática. Ele instalará o Node.js, as dependências e compilará o site.
-
-```bash
-# 1. Dar permissão de execução ao script
-chmod +x setup.sh
-
-# 2. Rodar o script
-./setup.sh
-```
-
-Se tudo der certo, pule para o **Passo 3** abaixo (Implantar no Servidor Web).
-
----
-
 ## 🔧 Instalação Manual
 
-Caso prefira fazer passo a passo ou o script falhe.
+Siga estes passos exatamente para evitar erros de compilação.
 
 ### 1. Instalar Dependências do Sistema
-Instale o servidor web Nginx e o Git.
+
+Primeiro, atualize o sistema e instale o **Node.js** e **npm**. É crucial que estes comandos rodem sem erros.
 
 ```bash
-# Atualizar lista de pacotes
+# 1. Atualizar lista de pacotes e instalar utilitários básicos
 sudo apt update
 sudo apt install -y curl git nginx
+
+# 2. Instalar Node.js e npm (Versão estável)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# 3. VERIFICAÇÃO (Obrigatório):
+# Se estes comandos não retornarem números de versão, a instalação falhou.
+node -v
+npm -v
 ```
 
-### 2. Baixar e Compilar o Projeto
+### 2. Baixar e Instalar o Projeto
 
-Antes de prosseguir, é fundamental instalar o **Node.js** e o **npm**. Se você receber erros como `npm: command not found` ou `parcel: not found`, execute:
-
-```bash
-sudo apt update
-sudo apt install -y nodejs npm
-```
-
-Agora, prossiga com o download e compilação:
+Aqui corrigimos o erro `parcel: not found`. Você **DEVE** rodar o `npm install` antes do build.
 
 ```bash
-# Clonar o repositório
+# 1. Clonar o repositório
 git clone https://github.com/marceloreis098/CamHome.git
 
-# Entrar na pasta
+# 2. Entrar na pasta
 cd CamHome
 
-# Instalar dependências do projeto
+# 3. Instalar as dependências do projeto (Isso instala o parcel)
+# AGUARDE o término deste comando.
 npm install
 
-# Compilar o projeto (Gera a pasta 'dist')
+# 4. Compilar o projeto
 npm run build
 
-# Verifique se a pasta foi criada corretamente
+# 5. Verifique se a pasta 'dist' foi criada com sucesso
 ls -F dist/
 ```
 
 ### 3. Implantar no Servidor Web
-Mova os arquivos compilados para o diretório padrão do servidor web e ajuste as permissões.
+
+Mova os arquivos compilados para o diretório do Nginx.
 
 ```bash
 # Criar diretório do site
@@ -77,12 +66,13 @@ sudo mkdir -p /var/www/camhome
 # Copiar os arquivos da pasta 'dist' para o servidor
 sudo cp -r dist/. /var/www/camhome/
 
-# Ajustar permissões (Crítico para evitar erro 403)
+# Ajustar permissões (Crítico para evitar erro 403 Forbidden)
 sudo chown -R www-data:www-data /var/www/camhome
 sudo chmod -R 755 /var/www/camhome
 ```
 
 ### 4. Configurar o Nginx
+
 Configure o Nginx para servir a aplicação React.
 
 1. Crie o arquivo de configuração:
@@ -90,7 +80,7 @@ Configure o Nginx para servir a aplicação React.
 sudo nano /etc/nginx/sites-available/camhome
 ```
 
-2. Cole o seguinte conteúdo dentro do editor:
+2. Cole o seguinte conteúdo:
 ```nginx
 server {
     listen 80;
@@ -104,7 +94,7 @@ server {
     }
 }
 ```
-3. Salve e saia (Ctrl+O, Enter, Ctrl+X).
+3. Salve e saia (`Ctrl+O`, `Enter`, `Ctrl+X`).
 
 4. Ative o site e reinicie o serviço:
 ```bash
@@ -120,25 +110,10 @@ sudo systemctl restart nginx
 
 ---
 
-## 🌐 Como Acessar a Aplicação
+## 🌐 Como Acessar
 
-### 1. Descobrir o Endereço IP
-Se você não sabe o IP do seu Orange Pi, execute este comando no terminal dele:
-```bash
-hostname -I
-```
-*Anote o primeiro número que aparecer (ex: `192.168.1.55`)*
-
-### 2. Acessar no Navegador
-No seu computador ou celular (conectado à mesma rede Wi-Fi/Cabo):
-
-1. Abra o Chrome, Firefox ou Safari.
-2. Digite o IP na barra de endereços:
-   `http://SEU_IP_AQUI` 
-   *(Exemplo: http://192.168.1.55)*
-
-### 3. Login Padrão
-Ao carregar a tela de login, use as credenciais iniciais:
-
-- **Usuário:** `admin`
-- **Senha:** `password`
+1. Descubra o IP do seu Orange Pi: `hostname -I`
+2. Acesse no navegador: `http://SEU_IP`
+3. **Login Padrão**:
+   - Usuário: `admin`
+   - Senha: `password`
