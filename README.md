@@ -11,80 +11,59 @@ Sistema de vigilância leve e inteligente projetado para Orange Pi (Ubuntu Serve
   - Yoosee (IP: 192.168.1.2)
   - Microseven (IP: 192.168.1.25)
 
-## 🚀 Instalação Automática (Recomendado)
+## 🚀 Instalação e Correção
 
-Siga estes passos para colocar o servidor no ar em poucos minutos.
+Se você está vendo um erro **403 Forbidden** ou problemas de acesso, utilize o script de correção incluído.
 
-### 1. Preparar e Baixar (Via Git)
-Instale o git e baixe os arquivos do projeto para o seu Orange Pi.
+### Passo a Passo
 
-```bash
-# 1.1 Atualizar pacotes e instalar Git
-sudo apt update && sudo apt install -y git
+1. **Baixar o Código (Se ainda não baixou)**
+   ```bash
+   sudo apt update && sudo apt install -y git
+   git clone https://github.com/seu-usuario/orangeguard.git
+   cd orangeguard
+   ```
 
-# 1.2 Clonar o repositório
-git clone https://github.com/seu-usuario/orangeguard.git
+2. **Executar Script de Correção**
+   Este script compila o projeto, move os arquivos para o servidor web e corrige as permissões automaticamente.
+   
+   ```bash
+   # Dar permissão de execução
+   chmod +x fix_deployment.sh
+   
+   # Rodar a correção
+   sudo ./fix_deployment.sh
+   ```
 
-# 1.3 Entrar na pasta do projeto
-cd orangeguard
-```
-
-### 2. Corrigir e Preparar Script
-**Importante:** Execute estes comandos para corrigir problemas de formatação de arquivo (erro "No such file") e dar permissão de execução.
-
-```bash
-# Remove caracteres do Windows (CRLF) que causam erro no Linux
-sed -i 's/\r$//' install.sh
-
-# Torna o script executável
-chmod +x install.sh
-```
-
-### 3. Executar Instalação
-Agora que o arquivo está corrigido, inicie a instalação automática.
-
-```bash
-sudo ./install.sh
-```
-
-### 4. Acessando o Painel
-Ao final da instalação, o script mostrará o IP de acesso.
-
-1. Abra o navegador no seu computador ou celular (conectado na mesma rede).
-2. Digite o endereço IP mostrado (Exemplo: `http://192.168.1.X`).
-   - Se você esqueceu o IP, rode o comando: `hostname -I` no terminal do Orange Pi.
-3. **Login Padrão:**
+3. **Acessar o Painel**
+   Ao final, o script mostrará o IP de acesso (Ex: `http://192.168.1.55`).
+   
+   **Login Padrão:**
    - **Usuário:** `admin`
    - **Senha:** `password`
 
 ---
 
-## 🆘 Solução de Problemas
+## 🔧 Estrutura do Projeto
 
-### Erro: `unable to execute ./install.sh: No such file or directory`
-Se você ver este erro, significa que o passo 2 foi pulado ou falhou. O Linux não consegue ler o arquivo criado no Windows.
-**Solução:** Execute `sed -i 's/\r$//' install.sh` e tente novamente.
+- **/src**: Código fonte React
+- **/dist**: Arquivos compilados para produção
+- **/var/www/orangeguard**: Local onde o site roda no servidor
 
----
+## 🆘 Solução de Problemas Comuns
 
-## 🔧 Instalação Manual
+### 1. Erro `403 Forbidden`
+Isso acontece quando o Nginx não tem permissão para ler os arquivos.
+**Solução:** Rode `./fix_deployment.sh`.
 
-Se o script falhar, você pode fazer manualmente:
+### 2. Erro `unable to execute ./fix_deployment.sh: No such file`
+Se o arquivo foi salvo no Windows, pode ter quebras de linha incorretas.
+**Solução:**
+```bash
+sed -i 's/\r$//' fix_deployment.sh
+sudo ./fix_deployment.sh
+```
 
-1. **Instalar Node.js 20 e Nginx:**
-   ```bash
-   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-   sudo apt install -y nodejs nginx
-   ```
-
-2. **Compilar o Projeto:**
-   ```bash
-   npm install
-   npm run build
-   ```
-
-3. **Configurar Nginx:**
-   Copie os arquivos de `dist/` para `/var/www/orangeguard` e aponte o Nginx para lá.
-
-4. **Diretórios:**
-   Crie a pasta `/mnt/orange_drive_1tb` para simular o HD externo.
+### 3. Página em Branco
+Se a página carregar mas ficar branca, verifique se o build foi bem sucedido.
+Tente rodar `npm run build` manualmente para ver erros.
