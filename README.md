@@ -15,11 +15,22 @@ Sistema de vigilância leve e inteligente projetado para Orange Pi (Ubuntu Serve
 
 Siga estes passos para colocar o servidor no ar em poucos minutos usando o script incluso.
 
-### 1. Transferir Arquivos
-Transfira a pasta do projeto para o seu Orange Pi (usando Git, SCP ou Pen Drive).
+### 1. Obter o Código (Via Git)
+Primeiro, instale o Git no seu servidor e clone o repositório do projeto:
+
+```bash
+# Atualiza pacotes e instala o Git
+sudo apt update && sudo apt install -y git
+
+# Clone o repositório (substitua pela URL do seu repositório)
+git clone https://github.com/seu-usuario/orangeguard.git
+
+# Entre na pasta do projeto
+cd orangeguard
+```
 
 ### 2. Preparar o Script
-Abra o terminal na pasta do projeto e dê permissão de execução ao instalador:
+Dê permissão de execução ao instalador:
 
 ```bash
 chmod +x install.sh
