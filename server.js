@@ -243,8 +243,12 @@ app.get('/api/scan', (req, res) => {
 
     const ports = "80,554";
     
-    // We try 'nmap', if not found, usually it's in /usr/bin/nmap
-    const command = `nmap -p ${ports} --open -oG - -T4 ${subnet}`;
+    // Attempt to use 'nmap' directly, fallback to common linux path
+    let command = `nmap -p ${ports} --open -oG - -T4 ${subnet}`;
+    
+    if (fs.existsSync('/usr/bin/nmap')) {
+         command = `/usr/bin/nmap -p ${ports} --open -oG - -T4 ${subnet}`;
+    }
 
     exec(command, (error, stdout, stderr) => {
         if (error) {

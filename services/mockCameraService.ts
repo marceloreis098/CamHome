@@ -161,13 +161,18 @@ export const updateCamera = (updatedCamera: Camera): Promise<void> => {
 // Network Scan (REAL API CALL)
 export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
   try {
-    const response = await fetch('/api/scan');
-    const responseText = await response.text(); // Read text first to prevent JSON parse crashes
+    // We explicitly request JSON to avoid getting HTML from some default server configs
+    const response = await fetch('/api/scan', {
+        headers: { 'Accept': 'application/json' }
+    });
+
+    const responseText = await response.text(); 
     
     // 1. Check if response is HTML (Common Nginx/Proxy Error)
+    // If it starts with <, it's almost certainly HTML (e.g. <!DOCTYPE html> or <html>)
     if (responseText.trim().startsWith('<')) {
-         console.error("Recebido HTML da API Scan:", responseText.substring(0, 100));
-         throw new Error("Erro de Conexão: O Frontend recebeu uma página HTML em vez de dados. Verifique se o Backend (Node.js) está rodando e se o Nginx está configurado corretamente.");
+         console.error("ERRO CRÍTICO: API retornou HTML.", responseText.substring(0, 100));
+         throw new Error("Erro de Configuração do Servidor: O sistema recebeu uma página Web em vez de dados (JSON). Isso geralmente significa que o Nginx não está redirecionando o caminho /api/ para a porta 3000, ou você não reiniciou o Nginx após configurar.");
     }
 
     // 2. Try parse JSON
@@ -175,7 +180,7 @@ export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
     try {
         data = JSON.parse(responseText);
     } catch (e) {
-        throw new Error(`Resposta inválida do servidor: ${responseText.substring(0, 50)}...`);
+        throw new Error(`Resposta inválida (não-JSON) do servidor. Conteúdo: ${responseText.substring(0, 50)}...`);
     }
 
     // 3. Check Protocol Errors
@@ -193,7 +198,7 @@ export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
     }));
 
   } catch (error) {
-    console.error("Network scan error.", error);
+    console.error("Network scan error detail:", error);
     throw error;
   }
 };
