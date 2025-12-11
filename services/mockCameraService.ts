@@ -6,15 +6,17 @@ const STORAGE_KEY_USERS = 'camhome_users';
 
 // --- MOCK DATA ---
 
-const DEFAULT_USERS: User[] = [
-  {
+const DEFAULT_ADMIN: User = {
     id: 'u1',
     username: 'admin',
     password: 'password',
     name: 'Administrador',
     role: 'ADMIN',
     createdAt: new Date()
-  },
+};
+
+const DEFAULT_USERS: User[] = [
+  DEFAULT_ADMIN,
   {
     id: 'u2',
     username: 'visitante',
@@ -25,52 +27,9 @@ const DEFAULT_USERS: User[] = [
   }
 ];
 
-const DEFAULT_CAMERAS: Camera[] = [
-  {
-    id: 'cam-demo-1',
-    name: 'Câmera Demo (Sala)',
-    ip: '192.168.1.100',
-    model: 'IP Cam Simulator',
-    status: CameraStatus.ONLINE,
-    thumbnailUrl: 'https://picsum.photos/800/600?random=1',
-    lastEvent: 'Sistema Iniciado',
-    resolution: '1080p',
-    framerate: 15,
-    bitrate: 2048,
-    externalTraffic: false
-  }
-];
+const DEFAULT_CAMERAS: Camera[] = []; // Start empty to force setup usage
 
-const DEFAULT_RECORDINGS: RecordedMedia[] = [
-  {
-    id: 'rec-1',
-    cameraId: 'cam-demo-1',
-    cameraName: 'Câmera Demo (Sala)',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
-    thumbnailUrl: 'https://picsum.photos/800/600?random=10',
-    type: 'image',
-    aiTags: ['Pessoa', 'Movimento'],
-    userTags: ['Entregador']
-  },
-  {
-    id: 'rec-2',
-    cameraId: 'cam-demo-1',
-    cameraName: 'Câmera Demo (Sala)',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
-    thumbnailUrl: 'https://picsum.photos/800/600?random=11',
-    type: 'video',
-    aiTags: ['Veículo', 'Suspeito'],
-  },
-  {
-    id: 'rec-3',
-    cameraId: 'cam-demo-1',
-    cameraName: 'Câmera Demo (Sala)',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 48), // 2 days ago
-    thumbnailUrl: 'https://picsum.photos/800/600?random=12',
-    type: 'image',
-    aiTags: ['Cachorro', 'Quintal'],
-  }
-];
+const DEFAULT_RECORDINGS: RecordedMedia[] = [];
 
 let INITIAL_CONFIG: SystemConfig = {
   appName: 'CamHome',
@@ -107,7 +66,17 @@ const saveStoredCameras = (cameras: Camera[]) => {
 const getStoredUsers = (): User[] => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_USERS);
-    return stored ? JSON.parse(stored) : DEFAULT_USERS;
+    let users = stored ? JSON.parse(stored) : DEFAULT_USERS;
+    
+    // SAFETY CHECK: Ensure Admin always exists and has ADMIN role
+    const adminIdx = users.findIndex((u: User) => u.username === 'admin');
+    if (adminIdx === -1) {
+        users.unshift(DEFAULT_ADMIN);
+    } else {
+        // Force admin role just in case it was corrupted
+        users[adminIdx].role = 'ADMIN';
+    }
+    return users;
   } catch (e) { return DEFAULT_USERS; }
 };
 
@@ -196,8 +165,7 @@ export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
     const response = await fetch('/api/scan');
     
     if (!response.ok) {
-        console.error("Scan failed");
-        return [];
+        throw new Error(`Server returned ${response.status}`);
     }
 
     const foundDevices: DiscoveredDevice[] = await response.json();
@@ -211,8 +179,8 @@ export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
 
   } catch (error) {
     console.error("Network scan error. Ensure server is running.", error);
-    // Fallback if API fails (e.g., running in pure frontend dev mode without server)
-    return [];
+    // Return empty but user needs to know it failed
+    throw error;
   }
 };
 
