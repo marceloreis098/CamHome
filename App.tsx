@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Camera, StorageStats, SystemConfig, SystemNotification, NotificationLevel } from './types';
-import { fetchCameras, fetchStorageStats, scanForCameras, updateCamera, fetchSystemConfig, logAccessAttempt, fetchNotifications, markNotificationRead, triggerMockEvent } from './services/mockCameraService';
+import { fetchCameras, addCamera, deleteCamera, fetchStorageStats, scanForCameras, updateCamera, fetchSystemConfig, logAccessAttempt, fetchNotifications, markNotificationRead, triggerMockEvent } from './services/mockCameraService';
 import CameraCard from './components/CameraCard';
 import StorageWidget from './components/StorageWidget';
 import SettingsPanel from './components/SettingsPanel';
@@ -79,6 +79,16 @@ const App: React.FC = () => {
   const handleUpdateCamera = async (updatedCamera: Camera) => {
     await updateCamera(updatedCamera);
     setCameras(prev => prev.map(c => c.id === updatedCamera.id ? updatedCamera : c));
+  };
+
+  const handleAddCamera = async (newCam: Camera) => {
+    await addCamera(newCam);
+    setCameras(prev => [...prev, newCam]);
+  };
+
+  const handleDeleteCamera = async (id: string) => {
+    await deleteCamera(id);
+    setCameras(prev => prev.filter(c => c.id !== id));
   };
 
   const handleLogin = (password: string, mfaToken?: string) => {
@@ -261,6 +271,12 @@ const App: React.FC = () => {
                 {cameras.map(cam => (
                   <CameraCard key={cam.id} camera={cam} />
                 ))}
+                {cameras.length === 0 && (
+                   <div className="col-span-2 text-center py-10 bg-gray-800 rounded-lg border border-gray-700 border-dashed">
+                      <p className="text-gray-400 mb-2">Nenhuma câmera configurada.</p>
+                      <button onClick={() => setActiveTab('settings')} className="text-orange-500 hover:underline">Ir para configurações</button>
+                   </div>
+                )}
               </div>
             </div>
 
@@ -309,7 +325,9 @@ const App: React.FC = () => {
         {activeTab === 'settings' && (
           <SettingsPanel 
             cameras={cameras} 
-            onUpdateCamera={handleUpdateCamera} 
+            onUpdateCamera={handleUpdateCamera}
+            onAddCamera={handleAddCamera}
+            onDeleteCamera={handleDeleteCamera}
             onConfigChange={setConfig}
           />
         )}

@@ -12,7 +12,8 @@ export interface Camera {
   ip: string;
   model: string;
   status: CameraStatus;
-  thumbnailUrl: string; // Placeholder for live feed
+  thumbnailUrl: string; // Placeholder for live feed (http link)
+  streamUrl?: string;   // Optional real stream URL
   lastEvent?: string;
   // Configuration fields
   resolution: string;

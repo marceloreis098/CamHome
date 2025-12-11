@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, CameraStatus, FileNode, SystemConfig, AccessLog, NotificationLevel } from '../types';
 import { fetchFileSystem, fetchSystemConfig, updateSystemConfig, fetchAccessLogs } from '../services/mockCameraService';
-import { CogIcon, HddIcon, FolderIcon, FileIcon, GlobeIcon, LockIcon, UserIcon, SmartphoneIcon, SignalIcon, BellIcon } from './Icons';
+import { CogIcon, HddIcon, FolderIcon, FileIcon, GlobeIcon, LockIcon, UserIcon, SmartphoneIcon, SignalIcon, BellIcon, CameraIcon } from './Icons';
 
 interface SettingsPanelProps {
   cameras: Camera[];
   onUpdateCamera: (camera: Camera) => Promise<void>;
+  onAddCamera: (camera: Camera) => Promise<void>;
+  onDeleteCamera: (id: string) => Promise<void>;
   onConfigChange: (config: SystemConfig) => void;
 }
 
-type SettingsSection = 'camera-config' | 'storage-config' | 'general-config' | 'security-config' | 'network-config';
+type SettingsSection = 'camera-config' | 'storage-config' | 'general-config' | 'security-config' | 'network-config' | 'new-camera';
 
 // Recursive component to render file tree
 const FileTreeItem: React.FC<{ node: FileNode; level: number }> = ({ node, level }) => {
@@ -42,7 +44,7 @@ const FileTreeItem: React.FC<{ node: FileNode; level: number }> = ({ node, level
   );
 };
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, onConfigChange }) => {
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, onAddCamera, onDeleteCamera, onConfigChange }) => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general-config');
   const [selectedCameraId, setSelectedCameraId] = useState<string>(cameras[0]?.id || '');
   const [fileSystem, setFileSystem] = useState<FileNode | null>(null);
@@ -80,6 +82,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
       name: formData.get('name') as string,
       ip: formData.get('ip') as string,
       model: formData.get('model') as string,
+      thumbnailUrl: formData.get('thumbnailUrl') as string,
       resolution: formData.get('resolution') as string,
       framerate: parseInt(formData.get('framerate') as string, 10),
       bitrate: parseInt(formData.get('bitrate') as string, 10),
@@ -89,6 +92,42 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
     await onUpdateCamera(updated);
     setLoading(false);
     alert('Configurações da câmera salvas!');
+  };
+
+  const handleNewCameraSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const formData = new FormData(form);
+
+    const newCam: Camera = {
+      id: `cam-${Date.now()}`,
+      name: formData.get('name') as string,
+      ip: formData.get('ip') as string,
+      model: formData.get('model') as string || 'Generic IP Cam',
+      status: CameraStatus.ONLINE,
+      thumbnailUrl: formData.get('thumbnailUrl') as string || 'https://via.placeholder.com/800x600?text=No+Signal',
+      resolution: '1080p',
+      framerate: 15,
+      bitrate: 2048,
+      externalTraffic: false
+    };
+
+    setLoading(true);
+    await onAddCamera(newCam);
+    setLoading(false);
+    setActiveSection('camera-config');
+    setSelectedCameraId(newCam.id);
+    alert('Nova câmera adicionada com sucesso!');
+  };
+
+  const handleDeleteCamera = async () => {
+    if (!selectedCamera) return;
+    if (confirm(`Tem certeza que deseja excluir a câmera "${selectedCamera.name}"?`)) {
+       setLoading(true);
+       await onDeleteCamera(selectedCamera.id);
+       setLoading(false);
+       setActiveSection('general-config');
+    }
   };
 
   const handleSystemSubmit = async (e: React.FormEvent) => {
@@ -119,7 +158,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
   };
 
   const verifyAndEnableMfa = async () => {
-    if (mfaCode === '123456') { // Mock verification
+    if (mfaCode === '123456') {
        const newConfig = { ...systemConfig!, enableMfa: true };
        await updateSystemConfig(newConfig);
        setSystemConfig(newConfig);
@@ -147,41 +186,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
       {/* Sidebar List */}
       <div className="md:col-span-1 space-y-6">
         
-        {/* General */}
-        <div>
-           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 px-1">Geral</h3>
-           <div className="space-y-1">
-             <button
-               onClick={() => setActiveSection('general-config')}
-               className={`w-full text-left p-2 rounded-lg text-sm transition-all flex items-center gap-2 ${activeSection === 'general-config' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
-             >
-               <CogIcon className="w-4 h-4" /> <span>Marca e App</span>
-             </button>
-             <button
-               onClick={() => setActiveSection('security-config')}
-               className={`w-full text-left p-2 rounded-lg text-sm transition-all flex items-center gap-2 ${activeSection === 'security-config' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
-             >
-               <LockIcon className="w-4 h-4" /> <span>Segurança e Acesso</span>
-             </button>
-           </div>
-        </div>
-
-        {/* Network */}
-        <div>
-           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 px-1">Rede</h3>
-           <div className="space-y-1">
-             <button
-               onClick={() => setActiveSection('network-config')}
-               className={`w-full text-left p-2 rounded-lg text-sm transition-all flex items-center gap-2 ${activeSection === 'network-config' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
-             >
-               <GlobeIcon className="w-4 h-4" /> <span>Monitoramento e DDNS</span>
-             </button>
-           </div>
-        </div>
-
         {/* Devices */}
         <div>
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 px-1">Dispositivos</h3>
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 px-1 flex justify-between items-center">
+             Dispositivos
+             <button 
+                onClick={() => setActiveSection('new-camera')}
+                className="text-xs bg-orange-600 hover:bg-orange-500 text-white px-2 py-0.5 rounded"
+             >
+                + ADD
+             </button>
+          </h3>
           <div className="space-y-1">
             {cameras.map((cam) => (
               <button
@@ -196,17 +211,36 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                     : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
                 }`}
               >
-                <span>{cam.name}</span>
-                <span className={`w-2 h-2 rounded-full ${cam.status === CameraStatus.ONLINE ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                <span className="truncate">{cam.name}</span>
+                <span className={`w-2 h-2 rounded-full shrink-0 ${cam.status === CameraStatus.ONLINE ? 'bg-green-400' : 'bg-red-400'}`}></span>
               </button>
             ))}
           </div>
         </div>
 
-        {/* System Section */}
+        {/* General */}
         <div>
-           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 px-1">Armazenamento</h3>
-           <button
+           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 px-1">Sistema</h3>
+           <div className="space-y-1">
+             <button
+               onClick={() => setActiveSection('general-config')}
+               className={`w-full text-left p-2 rounded-lg text-sm transition-all flex items-center gap-2 ${activeSection === 'general-config' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
+             >
+               <CogIcon className="w-4 h-4" /> <span>Geral</span>
+             </button>
+             <button
+               onClick={() => setActiveSection('security-config')}
+               className={`w-full text-left p-2 rounded-lg text-sm transition-all flex items-center gap-2 ${activeSection === 'security-config' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
+             >
+               <LockIcon className="w-4 h-4" /> <span>Segurança</span>
+             </button>
+             <button
+               onClick={() => setActiveSection('network-config')}
+               className={`w-full text-left p-2 rounded-lg text-sm transition-all flex items-center gap-2 ${activeSection === 'network-config' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
+             >
+               <GlobeIcon className="w-4 h-4" /> <span>Rede</span>
+             </button>
+             <button
              onClick={() => setActiveSection('storage-config')}
              className={`w-full text-left p-2 rounded-lg text-sm transition-all flex items-center gap-2 ${
                activeSection === 'storage-config'
@@ -215,14 +249,54 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
              }`}
            >
              <HddIcon className="w-4 h-4" />
-             <span>Gerenciador de Arquivos</span>
+             <span>Arquivos</span>
            </button>
+           </div>
         </div>
       </div>
 
       {/* Main Content Area */}
       <div className="md:col-span-3">
         
+        {/* NEW CAMERA FORM */}
+        {activeSection === 'new-camera' && (
+          <form onSubmit={handleNewCameraSubmit} className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl">
+             <div className="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
+               <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                 <CameraIcon className="w-6 h-6 text-green-500" />
+                 Adicionar Nova Câmera
+               </h2>
+             </div>
+             <div className="space-y-4 max-w-2xl">
+                <div>
+                   <label className="block text-sm text-gray-400 mb-1">Nome de Exibição</label>
+                   <input required name="name" placeholder="Ex: Câmera Garagem" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500" />
+                </div>
+                <div>
+                   <label className="block text-sm text-gray-400 mb-1">Endereço IP</label>
+                   <input required name="ip" placeholder="Ex: 192.168.1.105" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                </div>
+                <div>
+                   <label className="block text-sm text-gray-400 mb-1">URL da Imagem/Snapshot (JPG ou MJPEG)</label>
+                   <input required name="thumbnailUrl" placeholder="Ex: http://192.168.1.105/snap.jpg" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                   <p className="text-xs text-gray-500 mt-1">
+                      Navegadores não suportam RTSP diretamente. Use a URL HTTP de Snapshot ou MJPEG da sua câmera.
+                   </p>
+                </div>
+                <div>
+                   <label className="block text-sm text-gray-400 mb-1">Modelo</label>
+                   <input name="model" placeholder="Ex: TP-Link Tapo, Intelbras, etc" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500" />
+                </div>
+             </div>
+             <div className="mt-8 pt-6 border-t border-gray-700 flex justify-end gap-3">
+                 <button type="button" onClick={() => setActiveSection('general-config')} className="px-4 py-2 text-gray-400 hover:text-white">Cancelar</button>
+                 <button type="submit" disabled={loading} className="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg font-semibold shadow-lg">
+                   {loading ? 'Adicionando...' : 'Adicionar Câmera'}
+                 </button>
+             </div>
+          </form>
+        )}
+
         {/* GENERAL CONFIGURATION */}
         {activeSection === 'general-config' && (
           <form onSubmit={handleSystemSubmit} className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl">
@@ -375,29 +449,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                  </table>
                </div>
             </div>
-
-            {/* SERVER SECURITY / SSH (Updated per user request) */}
-            <div className="bg-gray-900 rounded-xl p-6 border border-gray-600 shadow-xl">
-              <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-                 <span className="text-gray-400">#_</span>
-                 Acesso ao Servidor (SSH)
-              </h3>
-              <p className="text-sm text-gray-400 mb-4">
-                 O acesso root/terminal ao Orange Pi está configurado para <strong>uso interno (LAN)</strong> na porta padrão 22.
-                 Não é necessário MFA para o shell, mas certifique-se de que o firewall bloqueie conexões externas na porta 22.
-              </p>
-              <div className="bg-black p-4 rounded-lg font-mono text-xs text-gray-300 border border-gray-700">
-                 <div className="flex justify-between border-b border-gray-800 pb-2 mb-2">
-                    <span>Serviço:</span> <span className="text-green-400">OpenSSH Server</span>
-                 </div>
-                 <div className="flex justify-between border-b border-gray-800 pb-2 mb-2">
-                    <span>Porta:</span> <span className="text-orange-400">22 (TCP)</span>
-                 </div>
-                 <div className="flex justify-between">
-                    <span>MFA (SSH):</span> <span className="text-red-400">Desativado (Acesso Interno)</span>
-                 </div>
-              </div>
-            </div>
           </div>
         )}
 
@@ -458,18 +509,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                   </div>
                 </div>
               </form>
-
-              {/* Recommendation for Tailscale/VPN */}
-              <div className="bg-gradient-to-r from-indigo-900 to-gray-800 rounded-xl p-6 border border-indigo-500/30">
-                 <h3 className="font-bold text-white mb-2 flex items-center gap-2">
-                   <LockIcon className="w-5 h-5 text-green-400" /> 
-                   Recomendado: Use Tailscale (Grátis e Seguro)
-                 </h3>
-                 <p className="text-sm text-indigo-100 mb-3">
-                   Em vez de abrir portas (o que pode ser arriscado), recomendamos instalar o <strong>Tailscale</strong> ou <strong>ZeroTier</strong>.
-                 </p>
-                 <a href="https://tailscale.com" target="_blank" rel="noreferrer" className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded inline-block">Saiba Mais</a>
-              </div>
            </div>
         )}
 
@@ -481,9 +520,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                  <CogIcon className="w-6 h-6 text-gray-400" />
                  Editar Câmera: {selectedCamera.name}
                </h2>
-               <span className={`px-2 py-1 rounded text-xs font-mono ${selectedCamera.status === CameraStatus.ONLINE ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
-                 {selectedCamera.status}
-               </span>
+               <div className="flex gap-2">
+                  <span className={`px-2 py-1 rounded text-xs font-mono flex items-center ${selectedCamera.status === CameraStatus.ONLINE ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
+                    {selectedCamera.status}
+                  </span>
+                  <button type="button" onClick={handleDeleteCamera} className="bg-red-900/50 hover:bg-red-900 text-red-400 px-3 py-1 rounded text-xs border border-red-800">
+                    EXCLUIR
+                  </button>
+               </div>
             </div>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
@@ -495,6 +539,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Endereço IP</label>
                   <input name="ip" defaultValue={selectedCamera.ip} pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-orange-500" />
+                </div>
+                <div>
+                   <label className="block text-sm text-gray-400 mb-1">URL da Imagem/Snapshot</label>
+                   <input name="thumbnailUrl" defaultValue={selectedCamera.thumbnailUrl} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-orange-500" />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Modelo do Dispositivo</label>
@@ -569,37 +617,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                 </div>
               </div>
               
-              {/* Retention Policy */}
-               <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
-                <h4 className="text-sm font-semibold text-white mb-3">Política de Retenção</h4>
-                <div className="flex flex-col md:flex-row gap-4">
-                   <div className="flex-1">
-                      <label className="block text-xs text-gray-400 mb-1">Excluir gravações mais antigas que</label>
-                      <select className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white">
-                        <option>7 Dias</option>
-                        <option>14 Dias</option>
-                        <option>30 Dias</option>
-                        <option>90 Dias</option>
-                        <option>Nunca (Excluir Manualmente)</option>
-                      </select>
-                   </div>
-                   <div className="flex-1">
-                      <label className="block text-xs text-gray-400 mb-1">Uso Máximo de Armazenamento</label>
-                      <div className="flex items-center gap-2">
-                         <input type="range" className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-orange-500" defaultValue="90" />
-                         <span className="text-sm text-white font-mono">90%</span>
-                      </div>
-                      <p className="text-[10px] text-gray-500 mt-1">Arquivos mais antigos serão sobrescritos ao atingir o limite.</p>
-                   </div>
-                </div>
-              </div>
-
-            </div>
-            
-            <div className="mt-6 flex justify-end">
-               <button className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold">
-                 Aplicar Configurações
-               </button>
             </div>
           </div>
         )}

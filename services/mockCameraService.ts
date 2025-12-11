@@ -1,34 +1,56 @@
-import { Camera, CameraStatus, StorageStats, LogEntry, RecordedMedia, FileNode, SystemConfig, AccessLog, SystemNotification, NotificationLevel } from '../types';
+import { Camera, CameraStatus, StorageStats, RecordedMedia, FileNode, SystemConfig, AccessLog, SystemNotification, NotificationLevel } from '../types';
 
-// Initial Mock Data translated to Portuguese
-let INITIAL_CAMERAS: Camera[] = [
+const STORAGE_KEY_CAMERAS = 'camhome_cameras';
+const STORAGE_KEY_CONFIG = 'camhome_config';
+
+// Default Data (Used only if LocalStorage is empty)
+const DEFAULT_CAMERAS: Camera[] = [
   {
-    id: 'cam-1',
-    name: 'Câmera Frontal',
-    ip: '192.168.1.2',
-    model: 'IP Cam 1080p',
+    id: 'cam-demo-1',
+    name: 'Câmera Demo (Sala)',
+    ip: '192.168.1.100',
+    model: 'IP Cam Simulator',
     status: CameraStatus.ONLINE,
     thumbnailUrl: 'https://picsum.photos/800/600?random=1',
-    lastEvent: 'Movimento detectado há 5m',
+    lastEvent: 'Sistema Iniciado',
     resolution: '1080p',
     framerate: 15,
     bitrate: 2048,
-    externalTraffic: true // Simulates talking to external cloud
-  },
-  {
-    id: 'cam-2',
-    name: 'Câmera Quintal',
-    ip: '192.168.1.25',
-    model: 'Outdoor Cam Pro',
-    status: CameraStatus.RECORDING,
-    thumbnailUrl: 'https://picsum.photos/800/600?random=2',
-    lastEvent: 'Pessoa detectada há 2m',
-    resolution: '1920x1080',
-    framerate: 30,
-    bitrate: 4096,
     externalTraffic: false
   }
 ];
+
+let INITIAL_CONFIG: SystemConfig = {
+  appName: 'CamHome',
+  username: 'admin',
+  password: 'password', // Default
+  enableAuth: true,
+  enableMfa: false,
+  ddnsProvider: 'noip',
+  ddnsHostname: 'minha-camera.ddns.net',
+  minAlertLevel: NotificationLevel.INFO,
+  enableSound: true
+};
+
+// Helper to get cameras from storage
+const getStoredCameras = (): Camera[] => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_CAMERAS);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error("Erro ao ler LocalStorage", e);
+  }
+  return DEFAULT_CAMERAS;
+};
+
+// Helper to save cameras
+const saveStoredCameras = (cameras: Camera[]) => {
+  localStorage.setItem(STORAGE_KEY_CAMERAS, JSON.stringify(cameras));
+};
+
+// --- Mock Data for other services (Read-only for now) ---
 
 const INITIAL_STORAGE: StorageStats = {
   total: 1000, // 1TB
@@ -40,48 +62,12 @@ const INITIAL_STORAGE: StorageStats = {
 const INITIAL_RECORDINGS: RecordedMedia[] = [
   {
     id: 'rec-1',
-    cameraId: 'cam-1',
-    cameraName: 'Varanda Frontal',
+    cameraId: 'cam-demo-1',
+    cameraName: 'Demo Sala',
     timestamp: new Date(Date.now() - 1000 * 60 * 5), // 5 mins ago
     thumbnailUrl: 'https://picsum.photos/800/600?random=10',
     type: 'image',
     aiTags: ['Pessoa', 'Entregador', 'Uniforme']
-  },
-  {
-    id: 'rec-2',
-    cameraId: 'cam-2',
-    cameraName: 'Quintal',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
-    thumbnailUrl: 'https://picsum.photos/800/600?random=11',
-    type: 'image',
-    aiTags: ['Animal', 'Cachorro', 'Labrador']
-  },
-  {
-    id: 'rec-3',
-    cameraId: 'cam-1',
-    cameraName: 'Varanda Frontal',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
-    thumbnailUrl: 'https://picsum.photos/800/600?random=12',
-    type: 'image',
-    aiTags: ['Veículo', 'Carro', 'Aproximação do Portão']
-  },
-  {
-    id: 'rec-4',
-    cameraId: 'cam-1',
-    cameraName: 'Varanda Frontal',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 25), 
-    thumbnailUrl: 'https://picsum.photos/800/600?random=13',
-    type: 'image',
-    aiTags: ['Pessoa', 'Tocando no Carro', 'Suspeito']
-  },
-  {
-    id: 'rec-5',
-    cameraId: 'cam-1',
-    cameraName: 'Varanda Frontal',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 26), 
-    thumbnailUrl: 'https://picsum.photos/800/600?random=14',
-    type: 'image',
-    aiTags: ['Pessoa', 'Parado na Calçada', 'Observando']
   }
 ];
 
@@ -102,16 +88,6 @@ const MOCK_FILE_SYSTEM: FileNode = {
           type: 'folder',
           children: [
              { id: 'date-1', name: '2023-10-25', type: 'folder', children: [{ id: 'f1', name: 'evt_01.jpg', type: 'file', size: '2MB'}] },
-             { id: 'date-2', name: '2023-10-26', type: 'folder', children: [] },
-             { id: 'date-3', name: '2023-10-27', type: 'folder', children: [] },
-          ]
-        },
-        {
-          id: 'folder-snap',
-          name: 'snapshots',
-          type: 'folder',
-          children: [
-            { id: 'snap-1', name: 'alerta_pessoa.jpg', type: 'file', size: '1.2MB' }
           ]
         },
         { id: 'sys-log', name: 'sistema.log', type: 'file', size: '45KB' }
@@ -120,39 +96,56 @@ const MOCK_FILE_SYSTEM: FileNode = {
   ]
 };
 
-let INITIAL_CONFIG: SystemConfig = {
-  appName: 'CamHome',
-  username: 'admin',
-  password: 'password', // Default
-  enableAuth: true,
-  enableMfa: false,
-  ddnsProvider: 'noip',
-  ddnsHostname: 'minha-camera.ddns.net',
-  minAlertLevel: NotificationLevel.INFO,
-  enableSound: true
-};
-
 let MOCK_ACCESS_LOGS: AccessLog[] = [
   { id: 'log-1', timestamp: new Date(Date.now() - 1000 * 60 * 30), user: 'admin', ip: '192.168.1.10', status: 'SUCCESS', method: 'PASSWORD' },
-  { id: 'log-2', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), user: 'admin', ip: '192.168.1.10', status: 'SUCCESS', method: 'PASSWORD' },
-  { id: 'log-3', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 25), user: 'unknown', ip: '192.168.1.45', status: 'FAILED', method: 'PASSWORD' },
 ];
 
 let MOCK_NOTIFICATIONS: SystemNotification[] = [
   {
     id: 'notif-0',
-    title: 'Sistema Iniciado',
-    message: 'Serviços de monitoramento CamHome online.',
+    title: 'Bem-vindo ao CamHome',
+    message: 'Configure suas câmeras reais na aba Configurações.',
     level: NotificationLevel.INFO,
     timestamp: new Date(Date.now() - 1000 * 60 * 60),
-    read: true
+    read: false
   }
 ];
 
-// Simulate fetching data
+// --- Services ---
+
 export const fetchCameras = (): Promise<Camera[]> => {
   return new Promise((resolve) => {
-    setTimeout(() => resolve([...INITIAL_CAMERAS]), 500);
+    // Return stored cameras instead of static mock
+    setTimeout(() => resolve(getStoredCameras()), 500);
+  });
+};
+
+export const addCamera = (newCam: Camera): Promise<void> => {
+  return new Promise((resolve) => {
+    const cameras = getStoredCameras();
+    cameras.push(newCam);
+    saveStoredCameras(cameras);
+    setTimeout(resolve, 500);
+  });
+};
+
+export const deleteCamera = (id: string): Promise<void> => {
+  return new Promise((resolve) => {
+    const cameras = getStoredCameras().filter(c => c.id !== id);
+    saveStoredCameras(cameras);
+    setTimeout(resolve, 500);
+  });
+};
+
+export const updateCamera = (updatedCamera: Camera): Promise<void> => {
+  return new Promise((resolve) => {
+    const cameras = getStoredCameras();
+    const index = cameras.findIndex(c => c.id === updatedCamera.id);
+    if (index !== -1) {
+      cameras[index] = updatedCamera;
+      saveStoredCameras(cameras);
+    }
+    setTimeout(resolve, 500);
   });
 };
 
@@ -176,7 +169,19 @@ export const fetchFileSystem = (): Promise<FileNode> => {
 
 export const fetchSystemConfig = (): Promise<SystemConfig> => {
   return new Promise((resolve) => {
+    const stored = localStorage.getItem(STORAGE_KEY_CONFIG);
+    if (stored) {
+      INITIAL_CONFIG = JSON.parse(stored);
+    }
     setTimeout(() => resolve({...INITIAL_CONFIG}), 400);
+  });
+};
+
+export const updateSystemConfig = (newConfig: SystemConfig): Promise<void> => {
+  return new Promise((resolve) => {
+    INITIAL_CONFIG = newConfig;
+    localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(newConfig));
+    setTimeout(resolve, 800);
   });
 };
 
@@ -186,9 +191,19 @@ export const fetchAccessLogs = (): Promise<AccessLog[]> => {
   });
 };
 
+export const logAccessAttempt = (user: string, success: boolean, method: 'PASSWORD' | 'MFA') => {
+  MOCK_ACCESS_LOGS.unshift({
+    id: `log-${Date.now()}`,
+    timestamp: new Date(),
+    user,
+    ip: 'Localhost',
+    status: success ? 'SUCCESS' : 'FAILED',
+    method
+  });
+};
+
 export const fetchNotifications = (): Promise<SystemNotification[]> => {
   return new Promise((resolve) => {
-    // Return sorted by date desc
     resolve([...MOCK_NOTIFICATIONS].sort((a,b) => b.timestamp.getTime() - a.timestamp.getTime()));
   });
 };
@@ -198,71 +213,30 @@ export const markNotificationRead = (id: string) => {
   if (n) n.read = true;
 };
 
-export const logAccessAttempt = (user: string, success: boolean, method: 'PASSWORD' | 'MFA') => {
-  MOCK_ACCESS_LOGS.unshift({
-    id: `log-${Date.now()}`,
-    timestamp: new Date(),
-    user,
-    ip: '192.168.1.10', // Simulated local IP
-    status: success ? 'SUCCESS' : 'FAILED',
-    method
-  });
-};
-
-// Simulate scanning the network
+// Simulate scanning the network (still returns defaults if empty, or existing)
 export const scanForCameras = (): Promise<Camera[]> => {
   return new Promise((resolve) => {
     setTimeout(() => {
-      resolve([...INITIAL_CAMERAS]); 
+      resolve(getStoredCameras()); 
     }, 2000);
   });
 };
 
-// Simulate updating camera settings
-export const updateCamera = (updatedCamera: Camera): Promise<void> => {
-  return new Promise((resolve) => {
-    const index = INITIAL_CAMERAS.findIndex(c => c.id === updatedCamera.id);
-    if (index !== -1) {
-      INITIAL_CAMERAS[index] = updatedCamera;
-    }
-    setTimeout(resolve, 800);
-  });
-};
-
-export const updateSystemConfig = (newConfig: SystemConfig): Promise<void> => {
-  return new Promise((resolve) => {
-    INITIAL_CONFIG = newConfig;
-    setTimeout(resolve, 800);
-  });
-};
-
-// Simulate an event (e.g. motion or error)
+// Simulate an event
 export const triggerMockEvent = () => {
-  const events = [
-    { title: "Movimento Detectado", msg: "Movimento humano identificado na Varanda.", level: NotificationLevel.WARNING, cam: "Varanda Frontal" },
-    { title: "Falha de Conexão", msg: "Câmera Quintal parou de responder.", level: NotificationLevel.CRITICAL, cam: "Quintal" },
-    { title: "Erro de Gravação", msg: "Falha ao gravar no disco externo. Disco cheio?", level: NotificationLevel.CRITICAL, cam: "System" },
-    { title: "Backup Concluído", msg: "Snapshot enviado para nuvem com sucesso.", level: NotificationLevel.INFO, cam: "System" }
-  ];
-
-  const rnd = Math.floor(Math.random() * events.length);
-  const event = events[rnd];
-
   const notification: SystemNotification = {
     id: `evt-${Date.now()}`,
-    title: event.title,
-    message: event.msg,
-    level: event.level,
+    title: "Teste de Alerta",
+    message: "Isto é um evento simulado para testar notificações.",
+    level: NotificationLevel.WARNING,
     timestamp: new Date(),
     read: false,
-    cameraId: event.cam !== 'System' ? 'cam-1' : undefined
+    cameraId: 'system'
   };
-
   MOCK_NOTIFICATIONS.push(notification);
   return notification;
 };
 
-// Convert an image URL to base64 (helper for our mock simulation to send to Gemini)
 export const urlToBase64 = async (url: string): Promise<string> => {
   try {
     const response = await fetch(url);
@@ -271,7 +245,6 @@ export const urlToBase64 = async (url: string): Promise<string> => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64 = reader.result as string;
-        // Remove data url prefix for Gemini
         const base64Data = base64.split(',')[1];
         resolve(base64Data);
       };
