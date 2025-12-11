@@ -7,22 +7,20 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS (Cross-Origin Resource Sharing)
-// This allows the frontend (port 1234 or 80) to talk to this backend (port 3000) directly
+// Enable CORS
 app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*"); // Allow any origin (for local dev)
+    res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     next();
 });
 
-// Serve static files from the React build folder (dist)
+// Serve static files
 app.use(express.static(path.join(__dirname, 'dist')));
 app.use(express.json());
 
 // --- HELPERS ---
 
-// Common Camera MAC OUIs (Organizationally Unique Identifiers)
 const MAC_VENDORS = {
     'e0:50:8b': 'Hikvision',
     '00:40:8c': 'Axis',
@@ -40,20 +38,10 @@ const MAC_VENDORS = {
     '00:12:17': 'Cisco-Linksys',
     '00:1b:11': 'D-Link',
     '00:24:8c': 'Asus',
-    'd8:50:e6': 'Asus'
-};
-
-// URL Patterns based on Vendor/Port
-const URL_PATTERNS = {
-    'Hikvision': 'http://[IP]/ISAPI/Streaming/channels/101/picture',
-    'Dahua/Intelbras': 'http://[IP]/cgi-bin/snapshot.cgi?channel=1',
-    'Axis': 'http://[IP]/axis-cgi/jpg/image.cgi',
-    'Foscam': 'http://[IP]/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&usr=[USER]&pwd=[PASS]',
-    'Vstarcam/Eye4': 'http://[IP]/snapshot.cgi?user=[USER]&pwd=[PASS]',
-    'ONVIF_8080': 'http://[IP]:8080/onvif/snapshot', 
-    'Yoosee': 'http://[IP]:5000/snapshot',
-    'XiongMai': 'http://[IP]/snap.jpg', // Often needs Active-X, but sometimes works
-    'Generic': 'http://[IP]:8080/shot.jpg' 
+    'd8:50:e6': 'Asus',
+    'b8:27:eb': 'Raspberry Pi',
+    'dc:a6:32': 'Raspberry Pi',
+    'e4:5f:01': 'Raspberry Pi'
 };
 
 function getLocalNetwork() {
@@ -65,13 +53,7 @@ function getLocalNetwork() {
             if (iface.family === 'IPv4' && !iface.internal) {
                 const parts = iface.address.split('.');
                 const subnet = `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
-                
-                // Prioritize 192.168.x.x as it's the most common home subnet
-                if (iface.address.startsWith('192.168')) {
-                    return subnet;
-                }
-                
-                // Keep looking but save this one just in case
+                if (iface.address.startsWith('192.168')) return subnet;
                 if (!bestCandidate) bestCandidate = subnet;
             }
         }
@@ -81,53 +63,40 @@ function getLocalNetwork() {
 
 function getArpTable() {
     try {
-        // Read linux ARP table directly
         const arpContent = fs.readFileSync('/proc/net/arp', 'utf8');
         const lines = arpContent.split('\n');
         const arpMap = {};
-        
-        // Skip header line
         for (let i = 1; i < lines.length; i++) {
             const parts = lines[i].trim().split(/\s+/);
             if (parts.length > 4) {
-                // IP Address is usually index 0, MAC Address index 3 in /proc/net/arp
                 const ip = parts[0];
                 const mac = parts[3];
-                if (mac && mac !== '00:00:00:00:00:00') {
-                    arpMap[ip] = mac;
-                }
+                if (mac && mac !== '00:00:00:00:00:00') arpMap[ip] = mac;
             }
         }
         return arpMap;
     } catch (e) {
-        console.warn("[Scanner] Failed to read ARP table:", e.message);
         return {};
     }
 }
 
 function identifyVendor(mac) {
     if (!mac) return 'Desconhecido';
-    const prefix = mac.substring(0, 8).toLowerCase(); // xx:xx:xx
+    const prefix = mac.substring(0, 8).toLowerCase();
     return MAC_VENDORS[prefix] || 'Genérico';
 }
 
-// Helper to scan directory recursively (limited depth)
 async function getDirRecursive(dirPath, currentDepth = 0, maxDepth = 2) {
     if (currentDepth > maxDepth) return [];
-    
-    // Check if dir exists and is accessible
     try {
         await fs.promises.access(dirPath, fs.constants.R_OK);
         const stats = await fs.promises.stat(dirPath);
         if (!stats.isDirectory()) return [];
-    } catch (e) {
-        return [];
-    }
+    } catch (e) { return []; }
 
     let children = [];
     try {
         const dirents = await fs.promises.readdir(dirPath, { withFileTypes: true });
-        
         for (const dirent of dirents) {
             const fullPath = path.join(dirPath, dirent.name);
             let node = {
@@ -140,16 +109,12 @@ async function getDirRecursive(dirPath, currentDepth = 0, maxDepth = 2) {
 
             if (dirent.isDirectory()) {
                 node.type = 'folder';
-                // Heuristics for Drives/Mounts
-                if (currentDepth === 0 || dirent.name.includes('drive') || dirent.name.includes('disk') || dirent.name.includes('usb')) {
+                if (currentDepth === 0 || ['drive','disk','usb','mnt'].some(k => dirent.name.includes(k))) {
                     node.type = 'drive';
                 }
-                
-                // Recursion
                 node.children = await getDirRecursive(fullPath, currentDepth + 1, maxDepth);
                 children.push(node);
             } else {
-                // Get file size for files
                 try {
                    const fStat = await fs.promises.stat(fullPath);
                    node.size = (fStat.size / (1024 * 1024)).toFixed(2) + ' MB';
@@ -157,33 +122,132 @@ async function getDirRecursive(dirPath, currentDepth = 0, maxDepth = 2) {
                 } catch(e) {}
             }
         }
-    } catch (e) {
-        console.warn(`[Storage] Failed to read dir ${dirPath}: ${e.message}`);
-    }
-    
+    } catch (e) {}
     return children;
 }
 
-// --- API ---
+// --- API ROUTES ---
 
-// 1. Storage Format / Clean API
+// 1. Storage Format
 app.post('/api/storage/format', async (req, res) => {
     const { path: targetPath } = req.body;
+    if (!targetPath) return res.status(400).json({ error: "Caminho não especificado." });
 
-    if (!targetPath) {
-        return res.status(400).json({ error: "Caminho não especificado." });
-    }
-
-    // Safety check: Prevent formatting root or crucial system folders
     const forbiddenPaths = ['/', '/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/proc', '/root', '/run', '/sbin', '/sys', '/usr', '/var'];
     if (forbiddenPaths.includes(targetPath) || targetPath === os.homedir()) {
-         return res.status(403).json({ error: "Ação bloqueada: Caminho do sistema protegido." });
+         return res.status(403).json({ error: "Ação bloqueada: Caminho protegido." });
     }
 
     try {
-        console.log(`[Storage] Iniciando limpeza em: ${targetPath}`);
-        
-        // Check if path exists
         if (fs.existsSync(targetPath)) {
-             // Remove all files recursively (Simulates formatting a partition mount point)
-             await fs.promises.rm(targetPath, { recursive:
+             await fs.promises.rm(targetPath, { recursive: true, force: true });
+             await fs.promises.mkdir(targetPath, { recursive: true });
+        }
+        res.json({ success: true, message: "Formatado com sucesso." });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 2. Storage Tree
+app.get('/api/storage/tree', async (req, res) => {
+    try {
+        // Start scanning from /mnt (typical for external drives on Linux/OrangePi)
+        // If /mnt is empty, user might need to adjust or mount drives there.
+        const tree = await getDirRecursive('/mnt', 0, 2);
+        
+        // Wrap in root node
+        const root = {
+            id: 'root',
+            name: 'Montagens (mnt)',
+            type: 'folder',
+            path: '/mnt',
+            children: tree,
+            isOpen: true
+        };
+        res.json(root);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// 3. Network Scan
+app.get('/api/scan', (req, res) => {
+    const subnet = getLocalNetwork();
+    const arpTable = getArpTable();
+    
+    console.log(`Scanning subnet: ${subnet}`);
+
+    // Run Nmap (Ping Scan)
+    exec(`nmap -sn ${subnet}`, (error, stdout, stderr) => {
+        if (error) {
+            console.warn("Nmap failed or not installed. Falling back to ARP table.");
+            // Fallback: Just return ARP table entries
+            const devices = Object.keys(arpTable).map(ip => ({
+                ip,
+                mac: arpTable[ip],
+                manufacturer: identifyVendor(arpTable[ip]),
+                model: 'Unknown (ARP)',
+                isAdded: false
+            }));
+            return res.json(devices);
+        }
+
+        // Parse Nmap output
+        const lines = stdout.split('\n');
+        const devices = [];
+        let currentIp = null;
+        let currentName = null;
+
+        lines.forEach(line => {
+            // "Nmap scan report for _gateway (192.168.1.1)" or "192.168.1.55"
+            if (line.startsWith('Nmap scan report for')) {
+                const parts = line.split(' ');
+                const ipPart = parts[parts.length - 1];
+                currentIp = ipPart.replace('(', '').replace(')', '');
+                currentName = parts.length > 5 ? parts[parts.length - 2] : 'Unknown';
+            }
+            // "MAC Address: XX:XX:XX... (Vendor)"
+            else if (line.includes('MAC Address:') && currentIp) {
+                const parts = line.split('MAC Address: ');
+                const macPart = parts[1].split(' ');
+                const mac = macPart[0];
+                const vendorFromNmap = line.substring(line.indexOf('(') + 1, line.indexOf(')'));
+                
+                devices.push({
+                    ip: currentIp,
+                    mac: mac,
+                    manufacturer: vendorFromNmap || identifyVendor(mac),
+                    model: currentName !== 'Unknown' ? currentName : 'Network Device',
+                    isAdded: false
+                });
+                currentIp = null;
+            }
+        });
+
+        // Add any ARP entries missed by nmap (e.g. self)
+        Object.keys(arpTable).forEach(ip => {
+            if (!devices.find(d => d.ip === ip)) {
+                devices.push({
+                    ip,
+                    mac: arpTable[ip],
+                    manufacturer: identifyVendor(arpTable[ip]),
+                    model: 'Device (ARP)',
+                    isAdded: false
+                });
+            }
+        });
+
+        res.json(devices);
+    });
+});
+
+// Catch-all for SPA (Must be last)
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Local Network: ${getLocalNetwork()}`);
+});
