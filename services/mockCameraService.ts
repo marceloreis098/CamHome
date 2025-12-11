@@ -52,16 +52,68 @@ let INITIAL_STORAGE: StorageStats = {
 
 // --- HELPERS ---
 
-// INTELLIGENT API ROUTING
-// If running on dev port (1234), point to backend port (3000).
-// If running in production (port 80/nginx), use relative path.
-const getApiUrl = (endpoint: string) => {
+// SMART FETCH: The core fix for "HTML response" errors.
+// It tries the relative path first. If it gets HTML (Nginx 404/Fallback) or fails,
+// it falls back to direct port 3000 connection.
+const smartFetch = async (endpoint: string, options: RequestInit = {}) => {
+    // 1. Determine Primary URL
     const isDev = process.env.NODE_ENV === 'development' || window.location.port === '1234';
+    let primaryUrl = endpoint; // Default relative for Production
     if (isDev) {
-        return `http://${window.location.hostname}:3000${endpoint}`;
+         primaryUrl = `http://${window.location.hostname}:3000${endpoint}`;
     }
-    return endpoint;
+
+    let response;
+    let text;
+
+    try {
+        response = await fetch(primaryUrl, options);
+        text = await response.text();
+    } catch (e) {
+        console.warn(`[SmartFetch] Falha na conexão principal (${primaryUrl}). Tentando fallback...`);
+        // If primary fails (Network Error), force null to trigger fallback logic below
+        response = null;
+        text = null; 
+    }
+
+    // 2. Check for success. If we got HTML (starting with <) or no response, try Fallback.
+    if (!response || !response.ok || (text && text.trim().startsWith('<'))) {
+        const currentPort = window.location.port;
+        // Only try fallback if we are NOT already on port 3000 (to avoid infinite loops)
+        if (currentPort !== '3000') {
+            const fallbackUrl = `http://${window.location.hostname}:3000${endpoint}`;
+            console.log(`[SmartFetch] Ativando Fallback para: ${fallbackUrl}`);
+            
+            try {
+                const resFallback = await fetch(fallbackUrl, options);
+                const textFallback = await resFallback.text();
+                
+                // If fallback is good (JSON), return it
+                if (resFallback.ok && !textFallback.trim().startsWith('<')) {
+                    return JSON.parse(textFallback);
+                }
+            } catch (fallbackErr) {
+                console.error("[SmartFetch] Fallback também falhou.", fallbackErr);
+            }
+        }
+    }
+
+    // 3. Process the original response if fallback wasn't needed or failed
+    if (text && text.trim().startsWith('<')) {
+         throw new Error("Erro de Configuração: O Backend retornou uma página Web (HTML) em vez de dados. Verifique se o server.js está rodando na porta 3000.");
+    }
+    
+    if (!response || !response.ok) {
+        let errMsg = "Erro desconhecido";
+        try {
+            if(text) errMsg = JSON.parse(text).error;
+        } catch(e) {}
+        throw new Error(errMsg || `Erro HTTP: ${response?.status}`);
+    }
+
+    return JSON.parse(text);
 };
+
 
 const getStoredCameras = (): Camera[] => {
   try {
@@ -172,31 +224,10 @@ export const updateCamera = (updatedCamera: Camera): Promise<void> => {
 // Network Scan (REAL API CALL)
 export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
   try {
-    // Uses getApiUrl to handle dev vs prod environment
-    const response = await fetch(getApiUrl('/api/scan'), {
+    // Use smartFetch to handle connection issues automatically
+    const data = await smartFetch('/api/scan', {
         headers: { 'Accept': 'application/json' }
     });
-
-    const responseText = await response.text(); 
-    
-    // 1. Check if response is HTML (Common Nginx/Proxy Error)
-    if (responseText.trim().startsWith('<')) {
-         console.error("ERRO CRÍTICO: API retornou HTML.", responseText.substring(0, 100));
-         throw new Error("Erro de Configuração do Servidor: O sistema recebeu uma página Web em vez de dados (JSON). Verifique se o backend (server.js) está rodando na porta 3000.");
-    }
-
-    // 2. Try parse JSON
-    let data;
-    try {
-        data = JSON.parse(responseText);
-    } catch (e) {
-        throw new Error(`Resposta inválida (não-JSON) do servidor. Conteúdo: ${responseText.substring(0, 50)}...`);
-    }
-
-    // 3. Check Protocol Errors
-    if (!response.ok) {
-        throw new Error(data.error || `Erro do Servidor: ${response.status}`);
-    }
 
     const foundDevices: DiscoveredDevice[] = data;
     const existingIps = getStoredCameras().map(c => c.ip);
@@ -232,30 +263,14 @@ export const fetchStorageStats = (): Promise<StorageStats> => {
 
 export const formatStorage = async (path: string): Promise<void> => {
     try {
-        const res = await fetch(getApiUrl('/api/storage/format'), {
+        await smartFetch('/api/storage/format', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path })
         });
-
-        const responseText = await res.text();
         
-        if (responseText.trim().startsWith('<')) {
-             throw new Error("Erro: Backend não acessível (HTML recebido).");
-        }
-
-        let data;
-        try {
-            data = JSON.parse(responseText);
-        } catch(e) { throw new Error("Resposta inválida ao formatar."); }
-
-        if (!res.ok) {
-             throw new Error(data.error || "Erro desconhecido ao formatar");
-        }
-
         // Reset local usage stats for UI
         INITIAL_STORAGE.used = 0; 
-
     } catch (e) {
         console.error("Erro na formatação:", e);
         throw e; // Propagate to UI
@@ -304,16 +319,7 @@ const MOCK_FILE_SYSTEM_FALLBACK: FileNode = {
 
 export const fetchFileSystem = async (): Promise<FileNode> => {
     try {
-        const response = await fetch(getApiUrl('/api/storage/tree'));
-        const responseText = await response.text();
-
-        if (responseText.trim().startsWith('<')) {
-             console.warn("FS Tree recebeu HTML. Backend offline ou Erro de rota.");
-             return MOCK_FILE_SYSTEM_FALLBACK;
-        }
-
-        const tree = JSON.parse(responseText);
-        if (!response.ok) throw new Error("Failed to fetch tree");
+        const tree = await smartFetch('/api/storage/tree');
         return tree;
     } catch (e) {
         console.warn("Could not fetch real file system, using fallback", e);
