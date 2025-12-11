@@ -12,17 +12,34 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
 
+  const getDisplayUrl = () => {
+    if (camera.username && camera.password && camera.thumbnailUrl.startsWith('http')) {
+      // Inject credentials into the URL (e.g., http://user:pass@192...)
+      // Note: This is a basic method. Some modern browsers/scenarios block embedded credentials for security.
+      // A robust production app would use a proxy or blob fetching.
+      try {
+        const urlObj = new URL(camera.thumbnailUrl);
+        urlObj.username = camera.username;
+        urlObj.password = camera.password;
+        return urlObj.toString();
+      } catch (e) {
+        return camera.thumbnailUrl;
+      }
+    }
+    return camera.thumbnailUrl;
+  };
+
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setAnalysis(null);
     
-    // Simulate getting the current frame
-    const base64 = await urlToBase64(camera.thumbnailUrl);
+    // Pass credentials to the fetching service so Gemini can see the image
+    const base64 = await urlToBase64(camera.thumbnailUrl, camera.username, camera.password);
     if (base64) {
       const result = await analyzeFrame(base64);
       setAnalysis(result);
     } else {
-      setAnalysis("Não foi possível capturar o frame.");
+      setAnalysis("Não foi possível capturar o frame. Verifique as credenciais ou a conexão.");
     }
     setIsAnalyzing(false);
   };
@@ -30,7 +47,7 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
   const handleSnapshot = () => {
     // Create a temporary link to download the image
     const link = document.createElement('a');
-    link.href = camera.thumbnailUrl;
+    link.href = getDisplayUrl();
     link.download = `${camera.name.replace(/\s+/g, '_')}_${new Date().getTime()}.jpg`;
     document.body.appendChild(link);
     link.click();
@@ -56,9 +73,20 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
       {/* Feed Area */}
       <div className="relative group bg-black aspect-video flex items-center justify-center overflow-hidden">
         <img 
-          src={camera.thumbnailUrl} 
+          src={getDisplayUrl()} 
           alt={camera.name} 
           className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+          onError={(e) => {
+            // Fallback UI if auth fails significantly
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+            if (target.parentElement) {
+              const msg = document.createElement('div');
+              msg.className = "text-gray-500 text-xs text-center p-4";
+              msg.innerText = "Falha ao carregar imagem. Verifique URL/Credenciais.";
+              target.parentElement.appendChild(msg);
+            }
+          }}
         />
         
         {/* Overlay Controls */}

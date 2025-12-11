@@ -83,6 +83,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
       ip: formData.get('ip') as string,
       model: formData.get('model') as string,
       thumbnailUrl: formData.get('thumbnailUrl') as string,
+      username: formData.get('username') as string,
+      password: formData.get('password') as string,
       resolution: formData.get('resolution') as string,
       framerate: parseInt(formData.get('framerate') as string, 10),
       bitrate: parseInt(formData.get('bitrate') as string, 10),
@@ -106,6 +108,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
       model: formData.get('model') as string || 'Generic IP Cam',
       status: CameraStatus.ONLINE,
       thumbnailUrl: formData.get('thumbnailUrl') as string || 'https://via.placeholder.com/800x600?text=No+Signal',
+      username: formData.get('username') as string,
+      password: formData.get('password') as string,
       resolution: '1080p',
       framerate: 15,
       bitrate: 2048,
@@ -283,6 +287,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                       Navegadores não suportam RTSP diretamente. Use a URL HTTP de Snapshot ou MJPEG da sua câmera.
                    </p>
                 </div>
+                
+                {/* Auth Section */}
+                <div className="grid grid-cols-2 gap-4 bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                    <div className="col-span-2 text-xs font-semibold text-orange-400 uppercase tracking-wider mb-1">
+                      Autenticação (Se necessário)
+                    </div>
+                    <div>
+                       <label className="block text-sm text-gray-400 mb-1">Usuário</label>
+                       <input name="username" placeholder="admin" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500" />
+                    </div>
+                    <div>
+                       <label className="block text-sm text-gray-400 mb-1">Senha</label>
+                       <input type="password" name="password" placeholder="••••••" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500" />
+                    </div>
+                </div>
+
                 <div>
                    <label className="block text-sm text-gray-400 mb-1">Modelo</label>
                    <input name="model" placeholder="Ex: TP-Link Tapo, Intelbras, etc" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500" />
@@ -544,6 +564,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                    <label className="block text-sm text-gray-400 mb-1">URL da Imagem/Snapshot</label>
                    <input name="thumbnailUrl" defaultValue={selectedCamera.thumbnailUrl} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-orange-500" />
                 </div>
+                
+                {/* Auth Section Edit */}
+                <div className="grid grid-cols-2 gap-4 bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                    <div className="col-span-2 text-xs font-semibold text-orange-400 uppercase tracking-wider mb-1">
+                      Autenticação
+                    </div>
+                    <div>
+                       <label className="block text-sm text-gray-400 mb-1">Usuário</label>
+                       <input name="username" defaultValue={selectedCamera.username} placeholder="admin" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500" />
+                    </div>
+                    <div>
+                       <label className="block text-sm text-gray-400 mb-1">Senha</label>
+                       <input type="password" name="password" defaultValue={selectedCamera.password} placeholder="••••••" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500" />
+                    </div>
+                </div>
+
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Modelo do Dispositivo</label>
                   <input name="model" defaultValue={selectedCamera.model} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500" />

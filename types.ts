@@ -14,6 +14,8 @@ export interface Camera {
   status: CameraStatus;
   thumbnailUrl: string; // Placeholder for live feed (http link)
   streamUrl?: string;   // Optional real stream URL
+  username?: string;    // Auth Username
+  password?: string;    // Auth Password
   lastEvent?: string;
   // Configuration fields
   resolution: string;

@@ -237,9 +237,14 @@ export const triggerMockEvent = () => {
   return notification;
 };
 
-export const urlToBase64 = async (url: string): Promise<string> => {
+export const urlToBase64 = async (url: string, username?: string, password?: string): Promise<string> => {
   try {
-    const response = await fetch(url);
+    const headers: HeadersInit = {};
+    if (username && password) {
+      headers['Authorization'] = 'Basic ' + btoa(username + ":" + password);
+    }
+
+    const response = await fetch(url, { headers });
     const blob = await response.blob();
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
