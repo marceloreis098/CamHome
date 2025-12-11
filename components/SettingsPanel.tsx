@@ -19,14 +19,15 @@ interface ExtendedDiscoveredDevice extends DiscoveredDevice {
 
 type SettingsSection = 'camera-config' | 'storage-config' | 'general-config' | 'security-config' | 'network-config' | 'new-camera' | 'user-management';
 
-// Common Presets
+// Common Presets based on User Feedback
 const CAMERA_PRESETS = [
-    { label: 'Selecione um Modelo (Opcional)', value: '' },
+    { label: 'Selecione um Modelo (Ajuda Rápida)', value: '' },
     { label: 'Vstarcam / Eye4', value: 'vstarcam', url: 'http://[IP]/snapshot.cgi?user=[USER]&pwd=[PASS]' },
+    { label: 'Genérica ONVIF (Porta 8080)', value: 'onvif_8080', url: 'http://[IP]:8080/onvif/snapshot' },
     { label: 'Hikvision / HiLook', value: 'hikvision', url: 'http://[IP]/ISAPI/Streaming/channels/101/picture' },
     { label: 'Intelbras / Dahua', value: 'dahua', url: 'http://[IP]/cgi-bin/snapshot.cgi?channel=1' },
-    { label: 'Yoosee (ONVIF)', value: 'yoosee', url: 'http://[IP]:5000/snapshot' },
-    { label: 'Genérica RTSP', value: 'generic', url: 'http://[IP]/snapshot.jpg' }
+    { label: 'Yoosee (ONVIF 5000)', value: 'yoosee', url: 'http://[IP]:5000/snapshot' },
+    { label: 'Genérica (Porta 80)', value: 'generic', url: 'http://[IP]/snapshot.jpg' }
 ];
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, onAddCamera, onDeleteCamera, onConfigChange, currentUser }) => {
@@ -77,6 +78,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
       ip: formData.get('ip') as string,
       model: formData.get('model') as string,
       thumbnailUrl: formData.get('thumbnailUrl') as string,
+      streamUrl: formData.get('streamUrl') as string,
       username: formData.get('username') as string,
       password: formData.get('password') as string,
       resolution: formData.get('resolution') as string,
@@ -102,6 +104,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
       model: formData.get('model') as string || 'Generic IP Cam',
       status: CameraStatus.ONLINE,
       thumbnailUrl: formData.get('thumbnailUrl') as string || 'https://via.placeholder.com/800x600?text=No+Signal',
+      streamUrl: formData.get('streamUrl') as string,
       username: formData.get('username') as string,
       password: formData.get('password') as string,
       resolution: '1080p',
@@ -127,12 +130,19 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
         const ipInput = document.querySelector('input[name="ip"]') as HTMLInputElement;
         const modelInput = document.querySelector('input[name="model"]') as HTMLInputElement;
         const urlInput = document.querySelector('input[name="thumbnailUrl"]') as HTMLInputElement;
+        const streamInput = document.querySelector('input[name="streamUrl"]') as HTMLInputElement;
         
         if (nameInput) nameInput.value = `${device.manufacturer.split(' ')[0]} Cam`;
         if (ipInput) ipInput.value = device.ip;
         if (modelInput) modelInput.value = device.model;
+        
         if (urlInput && device.suggestedUrl) {
             urlInput.value = device.suggestedUrl;
+        }
+
+        // Try to guess RTSP stream for convenience
+        if (streamInput && device.ip) {
+            streamInput.value = `rtsp://${device.ip}:554/onvif1`;
         }
         
         const usernameInput = document.querySelector('input[name="username"]') as HTMLInputElement;
@@ -455,29 +465,40 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm text-gray-400 mb-1">Nome de Exibição</label>
-                            <input required name="name" placeholder="Ex: Câmera Garagem" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500" />
+                            <input required name="name" placeholder="Ex: Câmera Rua" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500" />
                         </div>
                         <div>
-                            <label className="block text-sm text-gray-400 mb-1">Modelo / Predefinição</label>
-                            <select 
+                            <label className="block text-sm text-gray-400 mb-1">Endereço IP</label>
+                            <input required name="ip" placeholder="Ex: 192.168.1.25" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700">
+                         <div className="mb-4">
+                             <label className="block text-sm text-blue-400 font-bold mb-1">Assistente de Configuração</label>
+                             <p className="text-xs text-gray-500 mb-2">Selecione o modelo para preencher as URLs automaticamente com base no IP acima.</p>
+                             <select 
                                 name="model" 
-                                className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500"
+                                className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
                                 onChange={handlePresetChange}
                             >
                                 {CAMERA_PRESETS.map(p => (
                                     <option key={p.value} value={p.value}>{p.label}</option>
                                 ))}
                             </select>
-                        </div>
+                         </div>
                     </div>
+                    
                     <div>
-                    <label className="block text-sm text-gray-400 mb-1">Endereço IP</label>
-                    <input required name="ip" placeholder="Ex: 192.168.1.25" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                        <label className="block text-sm text-gray-400 mb-1">URL Snapshot (HTTP - Obrigatório para Visualização Web)</label>
+                        <input required name="thumbnailUrl" placeholder="http://192.168.1.X/snapshot.cgi..." className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                        <p className="text-[10px] text-gray-500 mt-1">Esta URL permite ver a câmera no painel. Navegadores não rodam RTSP nativamente.</p>
                     </div>
+
                     <div>
-                    <label className="block text-sm text-gray-400 mb-1">URL da Imagem/Snapshot (JPG ou MJPEG)</label>
-                    <input required name="thumbnailUrl" placeholder="Selecione um modelo acima ou digite..." className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
-                    <p className="text-xs text-gray-500 mt-1">Geralmente: /snapshot.jpg, /cgi-bin/snapshot.cgi, /ISAPI/Streaming/channels/101/picture</p>
+                        <label className="block text-sm text-gray-400 mb-1">URL Stream (RTSP - Opcional)</label>
+                        <input name="streamUrl" placeholder="rtsp://192.168.1.X:554/onvif1" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                        <p className="text-[10px] text-gray-500 mt-1">Usada para gravação contínua ou players externos (VLC).</p>
                     </div>
                     
                     {/* Auth Section */}
@@ -755,6 +776,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                 <div>
                    <label className="block text-sm text-gray-400 mb-1">URL da Imagem/Snapshot</label>
                    <input name="thumbnailUrl" defaultValue={selectedCamera.thumbnailUrl} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-orange-500" />
+                </div>
+                 <div>
+                   <label className="block text-sm text-gray-400 mb-1">URL Stream (RTSP)</label>
+                   <input name="streamUrl" defaultValue={selectedCamera.streamUrl} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-orange-500" />
                 </div>
                 
                 {/* AUTHENTICATION SECTION (EDIT) */}

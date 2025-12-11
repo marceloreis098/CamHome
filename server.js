@@ -27,7 +27,7 @@ const MAC_VENDORS = {
     '00:1d:2d': 'Wyze',
     '00:eb:d5': 'Tuya/Generic',
     'dc:4f:22': 'Espressif (ESP32-Cam)',
-    '48:8f:4c': 'Vstarcam/Eye4' // Adicionado baseado no seu print
+    '48:8f:4c': 'Vstarcam/Eye4'
 };
 
 // URL Patterns based on Vendor/Port
@@ -36,7 +36,8 @@ const URL_PATTERNS = {
     'Dahua/Intelbras': 'http://[IP]/cgi-bin/snapshot.cgi?channel=1',
     'Axis': 'http://[IP]/axis-cgi/jpg/image.cgi',
     'Foscam': 'http://[IP]/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&usr=[USER]&pwd=[PASS]',
-    'Vstarcam/Eye4': 'http://[IP]/snapshot.cgi?user=[USER]&pwd=[PASS]', // Vstarcam padrao
+    'Vstarcam/Eye4': 'http://[IP]/snapshot.cgi?user=[USER]&pwd=[PASS]',
+    'ONVIF_8080': 'http://[IP]:8080/onvif/snapshot', // Generic ONVIF on port 8080
     'Generic': 'http://[IP]:8080/shot.jpg' 
 };
 
@@ -101,14 +102,7 @@ app.get('/api/scan', (req, res) => {
     const subnet = getLocalNetwork();
     console.log(`[Scanner] Iniciando scan em: ${subnet}`);
 
-    // Scan common camera ports
-    // 554: RTSP
-    // 80: HTTP
-    // 8000: Hikvision SDK
-    // 37777: Dahua TCP
-    // 8899: ONVIF
-    // 1935: RTMP
-    // 81: Common alternate HTTP port for older cams
+    // Scan common camera ports including 8080 (gSOAP/ONVIF) and 81 (Vstarcam Web)
     const command = `nmap -p 554,80,81,8080,8000,37777,8899,1935 --open -oG - -T4 ${subnet}`;
 
     exec(command, (error, stdout, stderr) => {
@@ -136,26 +130,28 @@ app.get('/api/scan', (req, res) => {
                     let suggestedUrl = "";
 
                     // Heuristics based on Ports
-                    const has8000 = line.includes('8000/open');
-                    const has37777 = line.includes('37777/open');
-                    const has8899 = line.includes('8899/open');
-                    const has554 = line.includes('554/open');
-                    const has81 = line.includes('81/open');
+                    const has8000 = line.includes('8000/open'); // Hikvision
+                    const has37777 = line.includes('37777/open'); // Dahua
+                    const has8899 = line.includes('8899/open'); // ONVIF
+                    const has8080 = line.includes('8080/open'); // HTTP Alt / gSOAP
+                    const has554 = line.includes('554/open'); // RTSP
+                    const has81 = line.includes('81/open'); // Vstarcam Alt
 
                     if (has8000 && manufacturer === 'Genérico') manufacturer = 'Hikvision (Detectado por Porta)';
                     if (has37777 && manufacturer === 'Genérico') manufacturer = 'Dahua/Intelbras (Detectado por Porta)';
                     
-                    // Vstarcam often uses 81 for web management if 80 is busy, or just standard 80
+                    // Specific Logic for your cameras
                     if (manufacturer.includes('Vstarcam')) {
                         model = "Vstarcam / Eye4 IP Cam";
+                    } else if (has8080 && has554) {
+                        model = "Câmera ONVIF / gSOAP (Porta 8080)";
                     } else if (has554) {
                         model = "Câmera RTSP/ONVIF";
-                    } else if (line.includes('80/open') || line.includes('8080/open')) {
+                    } else if (line.includes('80/open') || has8080) {
                         model = "Webcam / Web Server";
                     }
 
                     // Set Suggested URL Pattern
-                    // Try to match specific vendor first
                     if (URL_PATTERNS[manufacturer]) {
                          suggestedUrl = URL_PATTERNS[manufacturer].replace('[IP]', ip);
                     } 
@@ -164,8 +160,11 @@ app.get('/api/scan', (req, res) => {
                         suggestedUrl = URL_PATTERNS['Hikvision'].replace('[IP]', ip);
                     } else if (manufacturer.includes('Dahua') || manufacturer.includes('Intelbras')) {
                         suggestedUrl = URL_PATTERNS['Dahua/Intelbras'].replace('[IP]', ip);
-                    } else if (manufacturer.includes('Vstarcam')) {
+                    } else if (manufacturer.includes('Vstarcam') || has81) {
                          suggestedUrl = `http://${ip}/snapshot.cgi?user=[USER]&pwd=[PASS]`;
+                    } else if (has8080) {
+                         // Common for Hipcam/gSOAP devices
+                         suggestedUrl = `http://${ip}:8080/onvif/snapshot`; 
                     } else {
                         // Generic Fallback
                         suggestedUrl = `http://${ip}/snapshot.jpg`;
