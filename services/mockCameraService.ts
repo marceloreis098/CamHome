@@ -121,7 +121,7 @@ const MOCK_FILE_SYSTEM: FileNode = {
 };
 
 let INITIAL_CONFIG: SystemConfig = {
-  appName: 'OrangeGuard',
+  appName: 'CamHome',
   username: 'admin',
   password: 'password', // Default
   enableAuth: true,
@@ -142,7 +142,7 @@ let MOCK_NOTIFICATIONS: SystemNotification[] = [
   {
     id: 'notif-0',
     title: 'Sistema Iniciado',
-    message: 'Serviços de monitoramento online.',
+    message: 'Serviços de monitoramento CamHome online.',
     level: NotificationLevel.INFO,
     timestamp: new Date(Date.now() - 1000 * 60 * 60),
     read: true

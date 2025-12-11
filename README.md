@@ -1,6 +1,6 @@
-# OrangeGuard Surveillance System
+# CamHome Surveillance System
 
-Sistema de vigilância leve e inteligente projetado para Orange Pi rodando Ubuntu Server 22.04. O sistema gerencia câmeras IP, monitora armazenamento e utiliza IA para análise de quadros.
+Sistema de vigilância leve e inteligente projetado para Orange Pi rodando Ubuntu Server 22.04. O **CamHome** gerencia câmeras IP, monitora armazenamento e utiliza IA para análise de quadros.
 
 ## 📋 Pré-requisitos de Hardware
 
@@ -32,10 +32,10 @@ Baixe o código fonte e gere os arquivos otimizados para produção.
 
 ```bash
 # Clonar o repositório (substitua a URL se necessário)
-git clone https://github.com/seu-usuario/orangeguard.git
+git clone https://github.com/seu-usuario/camhome.git
 
 # Entrar na pasta
-cd orangeguard
+cd camhome
 
 # Instalar dependências do projeto
 npm install
@@ -49,14 +49,14 @@ Mova os arquivos compilados para o diretório padrão do servidor web e ajuste a
 
 ```bash
 # Criar diretório do site
-sudo mkdir -p /var/www/orangeguard
+sudo mkdir -p /var/www/camhome
 
 # Copiar os arquivos da pasta 'dist' para o servidor
-sudo cp -r dist/* /var/www/orangeguard/
+sudo cp -r dist/* /var/www/camhome/
 
 # Ajustar permissões (Crítico para evitar erro 403)
-sudo chown -R www-data:www-data /var/www/orangeguard
-sudo chmod -R 755 /var/www/orangeguard
+sudo chown -R www-data:www-data /var/www/camhome
+sudo chmod -R 755 /var/www/camhome
 ```
 
 ### 4. Configurar o Nginx
@@ -64,7 +64,7 @@ Configure o Nginx para servir a aplicação React.
 
 1. Crie o arquivo de configuração:
 ```bash
-sudo nano /etc/nginx/sites-available/orangeguard
+sudo nano /etc/nginx/sites-available/camhome
 ```
 
 2. Cole o seguinte conteúdo dentro do editor:
@@ -73,7 +73,7 @@ server {
     listen 80;
     server_name _;
 
-    root /var/www/orangeguard;
+    root /var/www/camhome;
     index index.html;
 
     location / {
@@ -88,8 +88,8 @@ server {
 # Remove o site padrão para evitar conflitos
 sudo rm /etc/nginx/sites-enabled/default
 
-# Ativa o OrangeGuard
-sudo ln -s /etc/nginx/sites-available/orangeguard /etc/nginx/sites-enabled/
+# Ativa o CamHome
+sudo ln -s /etc/nginx/sites-available/camhome /etc/nginx/sites-enabled/
 
 # Reinicia o Nginx
 sudo systemctl restart nginx

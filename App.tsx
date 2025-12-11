@@ -162,7 +162,7 @@ const App: React.FC = () => {
               )}
               
               <div>
-                <h1 className="text-xl font-bold tracking-tight text-white">{config?.appName || 'OrangeGuard'}</h1>
+                <h1 className="text-xl font-bold tracking-tight text-white">{config?.appName || 'CamHome'}</h1>
                 <p className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Sistema de Vigilância</p>
               </div>
             </div>

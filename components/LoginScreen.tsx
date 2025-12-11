@@ -100,7 +100,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, appName, mfaEnabled 
         </form>
 
         <p className="mt-8 text-center text-xs text-gray-600">
-          Acesso Seguro • Orange Pi Surveillance
+          Acesso Seguro • CamHome Surveillance
         </p>
       </div>
     </div>

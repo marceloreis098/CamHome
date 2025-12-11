@@ -59,7 +59,7 @@ const ReportsPanel: React.FC = () => {
     doc.rect(0, 0, pageWidth, 20, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
-    doc.text("Relatório de Segurança - OrangeGuard", 10, 12);
+    doc.text("Relatório de Segurança - CamHome", 10, 12);
     
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(10);
