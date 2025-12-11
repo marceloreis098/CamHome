@@ -31,17 +31,21 @@ sudo apt install -y nodejs
 Baixe o código fonte e gere os arquivos otimizados para produção.
 
 ```bash
-# Clonar o repositório (substitua a URL se necessário)
-git clone https://github.com/seu-usuario/camhome.git
+# Clonar o repositório
+git clone https://github.com/marceloreis098/CamHome.git
 
 # Entrar na pasta
-cd camhome
+cd CamHome
 
 # Instalar dependências do projeto
 npm install
 
 # Compilar o projeto (Gera a pasta 'dist')
+# IMPORTANTE: Aguarde o comando finalizar sem erros! Se der erro, a pasta dist não será criada.
 npm run build
+
+# Verifique se a pasta foi criada corretamente (deve listar index.html e outros arquivos)
+ls -F dist/
 ```
 
 ### 3. Implantar no Servidor Web
@@ -52,7 +56,8 @@ Mova os arquivos compilados para o diretório padrão do servidor web e ajuste a
 sudo mkdir -p /var/www/camhome
 
 # Copiar os arquivos da pasta 'dist' para o servidor
-sudo cp -r dist/* /var/www/camhome/
+# O ponto final (.) garante que copie todo conteúdo corretamente
+sudo cp -r dist/. /var/www/camhome/
 
 # Ajustar permissões (Crítico para evitar erro 403)
 sudo chown -R www-data:www-data /var/www/camhome
