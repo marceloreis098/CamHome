@@ -117,11 +117,11 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
       </div>
 
       {/* Feed Area */}
-      <div className="relative group bg-black aspect-video flex items-center justify-center overflow-hidden">
+      <div className="relative bg-black aspect-video flex items-center justify-center overflow-hidden">
         <img 
           src={getProxyUrl()} 
           alt={camera.name} 
-          className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+          className="w-full h-full object-cover"
           onError={(e) => {
              setImgError(true);
              setIsLive(false); // Stop trying to refresh if it fails
@@ -146,31 +146,6 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
             </div>
         )}
 
-        {/* Overlay Controls */}
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-          <button 
-            onClick={handleSnapshot}
-            className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium shadow-lg transition-transform active:scale-95"
-            title="Gravar Imagem"
-          >
-            <PhotoIcon className="w-5 h-5" />
-            <span className="hidden sm:inline">Gravar</span>
-          </button>
-
-          <button 
-            onClick={handleAnalyze}
-            disabled={isAnalyzing}
-            className="flex items-center gap-2 bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-4 py-2 rounded-lg font-medium shadow-lg transition-transform active:scale-95 disabled:opacity-50"
-          >
-            {isAnalyzing ? (
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <SparklesIcon className="w-5 h-5" />
-            )}
-            <span className="hidden sm:inline">{isAnalyzing ? 'Analisando...' : 'Análise IA'}</span>
-          </button>
-        </div>
-
         {/* Status Badge */}
         <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-xs text-white font-mono flex items-center gap-2">
            <div className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
@@ -181,26 +156,51 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
       {/* Analysis Result Box */}
       {analysis && (
         <div className="p-4 bg-indigo-900/20 border-t border-indigo-500/30">
-          <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1 flex items-center gap-1">
-            <SparklesIcon className="w-3 h-3" /> Insight Gemini
-          </h4>
+          <div className="flex justify-between items-start mb-1">
+             <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1">
+                <SparklesIcon className="w-3 h-3" /> Insight Gemini
+             </h4>
+             <button onClick={() => setAnalysis(null)} className="text-xs text-indigo-400 hover:text-white">Fechar</button>
+          </div>
           <p className="text-sm text-indigo-100 leading-relaxed">
             {analysis}
           </p>
         </div>
       )}
 
-      {/* Footer Stats */}
-      {!analysis && (
-        <div className="p-3 bg-gray-900 border-t border-gray-800 text-xs text-gray-500 flex justify-between items-center">
-            <span>Último Evento: {camera.lastEvent || 'Nenhum'}</span>
-            <div className="flex gap-2">
-                <button onClick={() => setIsLive(!isLive)} className="hover:text-white">
-                    {isLive ? 'Pausar' : 'Retomar'}
-                </button>
-            </div>
-        </div>
-      )}
+      {/* Footer Controls */}
+      <div className="p-3 bg-gray-900 border-t border-gray-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+             <button 
+                onClick={handleSnapshot}
+                className="p-2 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors"
+                title="Salvar Snapshot"
+             >
+                <PhotoIcon className="w-4 h-4" />
+             </button>
+             
+             <button 
+                onClick={handleAnalyze}
+                disabled={isAnalyzing}
+                className="flex items-center gap-2 px-3 py-1.5 rounded bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-colors disabled:opacity-50"
+                title="Analisar frame atual com IA"
+             >
+                {isAnalyzing ? (
+                  <div className="w-3 h-3 border-2 border-indigo-300/30 border-t-indigo-300 rounded-full animate-spin" />
+                ) : (
+                  <SparklesIcon className="w-3 h-3" />
+                )}
+                Análise IA
+             </button>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span className="hidden sm:inline">Último: {camera.lastEvent || '-'}</span>
+              <button onClick={() => setIsLive(!isLive)} className="hover:text-white uppercase font-bold tracking-wider text-xs">
+                  {isLive ? 'Pausar' : 'Play'}
+              </button>
+          </div>
+      </div>
     </div>
   );
 };
