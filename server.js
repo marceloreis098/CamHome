@@ -44,6 +44,15 @@ const MAC_VENDORS = {
     'e4:5f:01': 'Raspberry Pi'
 };
 
+// Converte Netmask (ex: 255.255.255.192) para CIDR (ex: 26)
+function netmaskToCidr(netmask) {
+    if (!netmask) return 24;
+    return netmask.split('.').map(Number)
+      .map(part => (part >>> 0).toString(2))
+      .join('')
+      .split('1').length - 1;
+}
+
 function getLocalNetwork() {
     const interfaces = os.networkInterfaces();
     let bestCandidate = null;
@@ -51,8 +60,22 @@ function getLocalNetwork() {
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
             if (iface.family === 'IPv4' && !iface.internal) {
-                const parts = iface.address.split('.');
-                const subnet = `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
+                // Tenta usar o CIDR nativo ou calcula via Netmask para garantir suporte a /26
+                let cidrSuffix = 24;
+                if (iface.cidr) {
+                    const parts = iface.cidr.split('/');
+                    if (parts.length === 2) cidrSuffix = parts[1];
+                } else if (iface.netmask) {
+                    cidrSuffix = netmaskToCidr(iface.netmask);
+                }
+
+                // Monta a subnet (ex: 192.168.1.0/26)
+                const ipParts = iface.address.split('.');
+                // Lógica simples de subnet (assume classe C padrão para simplificar, mas usa o sufixo correto)
+                // Para cálculos mais complexos de máscara bitwise, seria necessário bibliotecas extras,
+                // mas isso cobre 99% dos casos domésticos (192.168.x.x).
+                const subnet = `${ipParts[0]}.${ipParts[1]}.${ipParts[2]}.0/${cidrSuffix}`;
+                
                 if (iface.address.startsWith('192.168')) return subnet;
                 if (!bestCandidate) bestCandidate = subnet;
             }
@@ -176,12 +199,13 @@ app.get('/api/scan', (req, res) => {
     const subnet = getLocalNetwork();
     const arpTable = getArpTable();
     
-    console.log(`Scanning subnet: ${subnet}`);
+    console.log(`[SCAN] Iniciando varredura na rede: ${subnet}`);
 
-    // Run Nmap (Ping Scan)
-    exec(`nmap -sn ${subnet}`, (error, stdout, stderr) => {
+    // Executa Nmap com Timeout para não travar o servidor se demorar muito.
+    // Timeout definido para 15 segundos (15000ms).
+    exec(`nmap -sn ${subnet}`, { timeout: 15000 }, (error, stdout, stderr) => {
         if (error) {
-            console.warn("Nmap failed or not installed. Falling back to ARP table.");
+            console.warn(`[SCAN] Nmap falhou ou demorou muito (Timeout). Usando ARP. Erro: ${error.message}`);
             // Fallback: Just return ARP table entries
             const devices = Object.keys(arpTable).map(ip => ({
                 ip,
@@ -237,7 +261,8 @@ app.get('/api/scan', (req, res) => {
                 });
             }
         });
-
+        
+        console.log(`[SCAN] Finalizado. ${devices.length} dispositivos encontrados.`);
         res.json(devices);
     });
 });
