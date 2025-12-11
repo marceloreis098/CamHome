@@ -12,80 +12,85 @@ Sistema de vigilância leve e inteligente projetado para Orange Pi rodando Ubunt
 
 ## 🔧 Guia de Instalação (Passo a Passo)
 
-Siga estes passos na ordem exata. Este guia foi revisado para evitar erros comuns de dependências no Ubuntu Server.
+Siga estes passos na ordem exata.
 
-### Passo 1: Preparar o Sistema
-Antes de tudo, vamos garantir que o sistema tem os utilitários básicos para baixar os repositórios.
+### Passo 1: Limpeza Profunda (Remover Node Antigo)
+Seu sistema está com o Node v12 (antigo) instalado. Precisamos removê-lo completamente antes de instalar o novo.
 
 ```bash
-# 1. Atualizar o sistema e instalar curl e git
+# 1. Remover nodejs antigo e bibliotecas associadas
+sudo apt remove -y nodejs npm libnode72
+sudo apt autoremove -y
+sudo rm -f /usr/bin/node
+sudo rm -f /usr/bin/npm
+
+# 2. Atualizar o sistema e instalar utilitários básicos
 sudo apt update
 sudo apt install -y curl git ca-certificates gnupg
 ```
 
-### Passo 2: Adicionar Repositório Node.js 20 (NodeSource)
-O Ubuntu vem com uma versão antiga do Node. Vamos adicionar o repositório oficial da versão 20 (LTS).
+### Passo 2: Instalar Node.js 20 (O Passo Crítico)
+O script abaixo configura o repositório, mas **você deve rodar o comando de instalação logo em seguida**.
 
 ```bash
-# 1. Baixar e executar o script de configuração do repositório NodeSource
+# 1. Baixar e configurar o repositório NodeSource (v20 LTS)
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 
-# 2. Instalar o Node.js
+# 2. IMPORTANTE: Instalar o Node.js (Execute este comando!)
+# Se pular este passo, o npm não será instalado.
 sudo apt install -y nodejs
 
-# 3. VERIFICAÇÃO CRÍTICA:
-# Rode os comandos abaixo. Se aparecerem números de versão, funcionou.
-# Se der erro, PARE e repita o passo anterior.
+# 3. VERIFICAÇÃO OBRIGATÓRIA:
+# Rode os comandos abaixo.
 node -v
+# DEVE retornar: v20.x.x (Se retornar v12, algo deu errado no passo 1)
+
 npm -v
+# DEVE retornar: 10.x.x
 ```
 
 ### Passo 3: Baixar e Instalar o CamHome
-Agora que o ambiente está pronto, vamos instalar o software.
+Agora que o `npm` (v10+) e `node` (v20+) estão confirmados:
 
 ```bash
-# 1. Clonar o repositório
+# 1. Clonar o repositório (Se já clonou, apenas entre na pasta)
 git clone https://github.com/marceloreis098/CamHome.git
 
 # 2. Entrar na pasta do projeto
 cd CamHome
 
-# 3. Instalar dependências do projeto
-# IMPORTANTE: Este comando instala o 'parcel' que causava erro anteriormente.
-# Aguarde até que a barra de progresso termine.
+# 3. Instalar dependências
 npm install
 
-# 4. Compilar o projeto (Build)
-# Se o passo 3 funcionou, este comando criará a pasta 'dist'
+# 4. Compilar o projeto
 npm run build
 ```
 
-**Se o comando acima funcionar, você verá uma mensagem: `✨ Built in X.XXs`**
+**Se o build funcionar, você verá: `✨ Built in X.XXs` e uma pasta `dist` será criada.**
 
 ### Passo 4: Configurar o Servidor Web (Nginx)
-Vamos configurar o Nginx para servir os arquivos que acabamos de compilar.
 
 ```bash
-# 1. Instalar Nginx (caso não tenha instalado no passo 1)
+# 1. Instalar Nginx
 sudo apt install -y nginx
 
 # 2. Criar diretório do site e copiar arquivos
 sudo mkdir -p /var/www/camhome
 sudo cp -r dist/. /var/www/camhome/
 
-# 3. Ajustar permissões (Evita erro 403 Forbidden)
+# 3. Ajustar permissões (Crítico para evitar erro 403)
 sudo chown -R www-data:www-data /var/www/camhome
 sudo chmod -R 755 /var/www/camhome
 ```
 
 ### Passo 5: Ativar o Site
 
-1. Crie o arquivo de configuração:
+1. Edite o arquivo de configuração:
 ```bash
 sudo nano /etc/nginx/sites-available/camhome
 ```
 
-2. Cole o conteúdo abaixo no editor:
+2. Cole o conteúdo abaixo:
 ```nginx
 server {
     listen 80;
@@ -99,7 +104,7 @@ server {
     }
 }
 ```
-3. Salve e saia (`Ctrl+O`, `Enter`, `Ctrl+X`).
+3. Salve (`Ctrl+O`, `Enter`) e Saia (`Ctrl+X`).
 
 4. Reinicie o Nginx:
 ```bash
@@ -120,20 +125,20 @@ sudo systemctl restart nginx
 
 ---
 
-## 🆘 Solução de Problemas Comuns
+## 🆘 Solução de Erros
 
-**Erro: `sh: 1: parcel: not found`**
-- **Causa:** O comando `npm install` não foi executado ou falhou.
-- **Solução:** Dentro da pasta `CamHome`, delete a pasta `node_modules` e tente novamente:
+**Erro: `-bash: npm: command not found`**
+- **Causa:** O comando `sudo apt install -y nodejs` não foi executado após o script do curl.
+- **Solução:** Rode `sudo apt install -y nodejs` e verifique novamente.
+
+**Erro: `sh: 1: parcel: not found` durante o build**
+- **Causa:** O `npm install` não rodou ou falhou.
+- **Solução:**
   ```bash
   rm -rf node_modules
   npm install
   npm run build
   ```
 
-**Erro: `EACCES: permission denied`**
-- **Causa:** Você rodou o npm com `sudo` ou permissões de pasta erradas.
-- **Solução:** Corrija a propriedade da pasta:
-  ```bash
-  sudo chown -R $USER:$(id -gn $USER) ~/CamHome
-  ```
+---
+**Desenvolvido por Marcelo Reis**
