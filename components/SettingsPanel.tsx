@@ -19,6 +19,16 @@ interface ExtendedDiscoveredDevice extends DiscoveredDevice {
 
 type SettingsSection = 'camera-config' | 'storage-config' | 'general-config' | 'security-config' | 'network-config' | 'new-camera' | 'user-management';
 
+// Common Presets
+const CAMERA_PRESETS = [
+    { label: 'Selecione um Modelo (Opcional)', value: '' },
+    { label: 'Vstarcam / Eye4', value: 'vstarcam', url: 'http://[IP]/snapshot.cgi?user=[USER]&pwd=[PASS]' },
+    { label: 'Hikvision / HiLook', value: 'hikvision', url: 'http://[IP]/ISAPI/Streaming/channels/101/picture' },
+    { label: 'Intelbras / Dahua', value: 'dahua', url: 'http://[IP]/cgi-bin/snapshot.cgi?channel=1' },
+    { label: 'Yoosee (ONVIF)', value: 'yoosee', url: 'http://[IP]:5000/snapshot' },
+    { label: 'Genérica RTSP', value: 'generic', url: 'http://[IP]/snapshot.jpg' }
+];
+
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, onAddCamera, onDeleteCamera, onConfigChange, currentUser }) => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('general-config');
   const [selectedCameraId, setSelectedCameraId] = useState<string>(cameras[0]?.id || '');
@@ -128,6 +138,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
         const usernameInput = document.querySelector('input[name="username"]') as HTMLInputElement;
         if(usernameInput) usernameInput.focus(); // Focus on Auth
     }, 100);
+  };
+
+  const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const selected = CAMERA_PRESETS.find(p => p.value === e.target.value);
+      if (selected && selected.value) {
+          const ipInput = document.querySelector('input[name="ip"]') as HTMLInputElement;
+          const urlInput = document.querySelector('input[name="thumbnailUrl"]') as HTMLInputElement;
+          
+          if (ipInput && ipInput.value) {
+              urlInput.value = selected.url.replace('[IP]', ipInput.value);
+          } else {
+              urlInput.value = selected.url;
+          }
+      }
   };
 
   // --- SCAN HANDLER ---
@@ -434,17 +458,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                             <input required name="name" placeholder="Ex: Câmera Garagem" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500" />
                         </div>
                         <div>
-                            <label className="block text-sm text-gray-400 mb-1">Modelo</label>
-                            <input name="model" placeholder="Detectado automaticamente" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500" />
+                            <label className="block text-sm text-gray-400 mb-1">Modelo / Predefinição</label>
+                            <select 
+                                name="model" 
+                                className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500"
+                                onChange={handlePresetChange}
+                            >
+                                {CAMERA_PRESETS.map(p => (
+                                    <option key={p.value} value={p.value}>{p.label}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
                     <div>
                     <label className="block text-sm text-gray-400 mb-1">Endereço IP</label>
-                    <input required name="ip" placeholder="Ex: 192.168.1.105" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                    <input required name="ip" placeholder="Ex: 192.168.1.25" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
                     </div>
                     <div>
                     <label className="block text-sm text-gray-400 mb-1">URL da Imagem/Snapshot (JPG ou MJPEG)</label>
-                    <input required name="thumbnailUrl" placeholder="Ex: http://192.168.1.105/snap.jpg" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                    <input required name="thumbnailUrl" placeholder="Selecione um modelo acima ou digite..." className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
                     <p className="text-xs text-gray-500 mt-1">Geralmente: /snapshot.jpg, /cgi-bin/snapshot.cgi, /ISAPI/Streaming/channels/101/picture</p>
                     </div>
                     

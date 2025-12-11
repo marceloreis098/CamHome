@@ -26,7 +26,8 @@ const MAC_VENDORS = {
     'b0:c5:54': 'D-Link',
     '00:1d:2d': 'Wyze',
     '00:eb:d5': 'Tuya/Generic',
-    'dc:4f:22': 'Espressif (ESP32-Cam)'
+    'dc:4f:22': 'Espressif (ESP32-Cam)',
+    '48:8f:4c': 'Vstarcam/Eye4' // Adicionado baseado no seu print
 };
 
 // URL Patterns based on Vendor/Port
@@ -35,21 +36,31 @@ const URL_PATTERNS = {
     'Dahua/Intelbras': 'http://[IP]/cgi-bin/snapshot.cgi?channel=1',
     'Axis': 'http://[IP]/axis-cgi/jpg/image.cgi',
     'Foscam': 'http://[IP]/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&usr=[USER]&pwd=[PASS]',
-    'Generic': 'http://[IP]:8080/shot.jpg' // Generic ESP32/Mjpeg
+    'Vstarcam/Eye4': 'http://[IP]/snapshot.cgi?user=[USER]&pwd=[PASS]', // Vstarcam padrao
+    'Generic': 'http://[IP]:8080/shot.jpg' 
 };
 
 function getLocalNetwork() {
     const interfaces = os.networkInterfaces();
+    let bestCandidate = null;
+
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
             if (iface.family === 'IPv4' && !iface.internal) {
                 const parts = iface.address.split('.');
-                parts.pop();
-                return `${parts.join('.')}.0/24`;
+                const subnet = `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
+                
+                // Prioritize 192.168.x.x as it's the most common home subnet
+                if (iface.address.startsWith('192.168')) {
+                    return subnet;
+                }
+                
+                // Keep looking but save this one just in case
+                if (!bestCandidate) bestCandidate = subnet;
             }
         }
     }
-    return '192.168.0.0/24';
+    return bestCandidate || '192.168.0.0/24';
 }
 
 function getArpTable() {
@@ -97,7 +108,8 @@ app.get('/api/scan', (req, res) => {
     // 37777: Dahua TCP
     // 8899: ONVIF
     // 1935: RTMP
-    const command = `nmap -p 554,80,8080,8000,37777,8899,1935 --open -oG - -T4 ${subnet}`;
+    // 81: Common alternate HTTP port for older cams
+    const command = `nmap -p 554,80,81,8080,8000,37777,8899,1935 --open -oG - -T4 ${subnet}`;
 
     exec(command, (error, stdout, stderr) => {
         if (error) {
@@ -128,26 +140,34 @@ app.get('/api/scan', (req, res) => {
                     const has37777 = line.includes('37777/open');
                     const has8899 = line.includes('8899/open');
                     const has554 = line.includes('554/open');
+                    const has81 = line.includes('81/open');
 
                     if (has8000 && manufacturer === 'Genérico') manufacturer = 'Hikvision (Detectado por Porta)';
                     if (has37777 && manufacturer === 'Genérico') manufacturer = 'Dahua/Intelbras (Detectado por Porta)';
-
-                    // Determine Model/Type
-                    if (has554) {
+                    
+                    // Vstarcam often uses 81 for web management if 80 is busy, or just standard 80
+                    if (manufacturer.includes('Vstarcam')) {
+                        model = "Vstarcam / Eye4 IP Cam";
+                    } else if (has554) {
                         model = "Câmera RTSP/ONVIF";
                     } else if (line.includes('80/open') || line.includes('8080/open')) {
                         model = "Webcam / Web Server";
                     }
 
                     // Set Suggested URL Pattern
+                    // Try to match specific vendor first
                     if (URL_PATTERNS[manufacturer]) {
-                        suggestedUrl = URL_PATTERNS[manufacturer].replace('[IP]', ip);
-                    } else if (manufacturer.includes('Hikvision')) {
+                         suggestedUrl = URL_PATTERNS[manufacturer].replace('[IP]', ip);
+                    } 
+                    // Fallbacks
+                    else if (manufacturer.includes('Hikvision')) {
                         suggestedUrl = URL_PATTERNS['Hikvision'].replace('[IP]', ip);
                     } else if (manufacturer.includes('Dahua') || manufacturer.includes('Intelbras')) {
                         suggestedUrl = URL_PATTERNS['Dahua/Intelbras'].replace('[IP]', ip);
+                    } else if (manufacturer.includes('Vstarcam')) {
+                         suggestedUrl = `http://${ip}/snapshot.cgi?user=[USER]&pwd=[PASS]`;
                     } else {
-                        // Fallback generic suggestion
+                        // Generic Fallback
                         suggestedUrl = `http://${ip}/snapshot.jpg`;
                     }
 
@@ -157,7 +177,7 @@ app.get('/api/scan', (req, res) => {
                         manufacturer: manufacturer,
                         model: model,
                         isAdded: false,
-                        suggestedUrl: suggestedUrl // New field for frontend
+                        suggestedUrl: suggestedUrl
                     });
                 }
             }
