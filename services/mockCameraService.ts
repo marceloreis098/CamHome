@@ -4,9 +4,9 @@ import { Camera, CameraStatus, StorageStats, LogEntry, RecordedMedia, FileNode, 
 let INITIAL_CAMERAS: Camera[] = [
   {
     id: 'cam-1',
-    name: 'Varanda Frontal (Yoosee)',
+    name: 'Câmera Frontal',
     ip: '192.168.1.2',
-    model: 'Yoosee Generic',
+    model: 'IP Cam 1080p',
     status: CameraStatus.ONLINE,
     thumbnailUrl: 'https://picsum.photos/800/600?random=1',
     lastEvent: 'Movimento detectado há 5m',
@@ -17,9 +17,9 @@ let INITIAL_CAMERAS: Camera[] = [
   },
   {
     id: 'cam-2',
-    name: 'Quintal (Microseven)',
+    name: 'Câmera Quintal',
     ip: '192.168.1.25',
-    model: 'MYM71080i-B',
+    model: 'Outdoor Cam Pro',
     status: CameraStatus.RECORDING,
     thumbnailUrl: 'https://picsum.photos/800/600?random=2',
     lastEvent: 'Pessoa detectada há 2m',
