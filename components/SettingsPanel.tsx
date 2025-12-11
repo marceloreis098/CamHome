@@ -12,6 +12,11 @@ interface SettingsPanelProps {
   currentUser: User;
 }
 
+// Extended interface for frontend to handle the suggested URL
+interface ExtendedDiscoveredDevice extends DiscoveredDevice {
+    suggestedUrl?: string;
+}
+
 type SettingsSection = 'camera-config' | 'storage-config' | 'general-config' | 'security-config' | 'network-config' | 'new-camera' | 'user-management';
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, onAddCamera, onDeleteCamera, onConfigChange, currentUser }) => {
@@ -24,7 +29,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
   
   // Scan State
   const [isScanning, setIsScanning] = useState(false);
-  const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredDevice[]>([]);
+  const [discoveredDevices, setDiscoveredDevices] = useState<ExtendedDiscoveredDevice[]>([]);
   const [scannedOnce, setScannedOnce] = useState(false);
 
   // User Mgmt State
@@ -103,19 +108,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
     alert('Nova câmera adicionada com sucesso!');
   };
 
-  const handleAddFromScan = (device: DiscoveredDevice) => {
+  const handleAddFromScan = (device: ExtendedDiscoveredDevice) => {
     // Open the new camera form with pre-filled data
     setActiveSection('new-camera');
     // We use a timeout to let the DOM render the form, then populate inputs
-    // In a real React app, we'd use state for the form values, but we'll cheat slightly for brevity in this prompt context
     setTimeout(() => {
         const nameInput = document.querySelector('input[name="name"]') as HTMLInputElement;
         const ipInput = document.querySelector('input[name="ip"]') as HTMLInputElement;
         const modelInput = document.querySelector('input[name="model"]') as HTMLInputElement;
+        const urlInput = document.querySelector('input[name="thumbnailUrl"]') as HTMLInputElement;
         
-        if (nameInput) nameInput.value = `${device.manufacturer} ${device.model}`;
+        if (nameInput) nameInput.value = `${device.manufacturer.split(' ')[0]} Cam`;
         if (ipInput) ipInput.value = device.ip;
         if (modelInput) modelInput.value = device.model;
+        if (urlInput && device.suggestedUrl) {
+            urlInput.value = device.suggestedUrl;
+        }
         
         const usernameInput = document.querySelector('input[name="username"]') as HTMLInputElement;
         if(usernameInput) usernameInput.focus(); // Focus on Auth
@@ -125,9 +133,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
   // --- SCAN HANDLER ---
   const runScan = async () => {
     setIsScanning(true);
-    const devices = await scanNetworkForDevices();
-    setDiscoveredDevices(devices);
-    setScannedOnce(true);
+    try {
+        const devices = await scanNetworkForDevices();
+        setDiscoveredDevices(devices);
+        setScannedOnce(true);
+    } catch(e) {
+        alert("Erro ao escanear. Verifique se o backend está rodando e se o 'nmap' está instalado.");
+    }
     setIsScanning(false);
   };
 
@@ -382,8 +394,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                             discoveredDevices.map((dev, idx) => (
                                 <div key={idx} className="bg-gray-900 p-3 rounded flex justify-between items-center border border-gray-700">
                                     <div>
-                                        <div className="text-white font-semibold text-sm">{dev.model} ({dev.manufacturer})</div>
+                                        <div className="text-white font-semibold text-sm">{dev.manufacturer}</div>
                                         <div className="text-xs text-gray-500 font-mono">IP: {dev.ip} • MAC: {dev.mac}</div>
+                                        {dev.suggestedUrl && (
+                                            <div className="text-[10px] text-gray-600 mt-1 truncate max-w-xs">{dev.suggestedUrl}</div>
+                                        )}
                                     </div>
                                     {dev.isAdded ? (
                                         <span className="text-xs text-green-500 bg-green-900/20 px-2 py-1 rounded flex items-center gap-1">
@@ -430,6 +445,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                     <div>
                     <label className="block text-sm text-gray-400 mb-1">URL da Imagem/Snapshot (JPG ou MJPEG)</label>
                     <input required name="thumbnailUrl" placeholder="Ex: http://192.168.1.105/snap.jpg" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                    <p className="text-xs text-gray-500 mt-1">Geralmente: /snapshot.jpg, /cgi-bin/snapshot.cgi, /ISAPI/Streaming/channels/101/picture</p>
                     </div>
                     
                     {/* Auth Section */}
