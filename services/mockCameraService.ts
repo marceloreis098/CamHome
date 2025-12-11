@@ -201,14 +201,26 @@ export const fetchStorageStats = (): Promise<StorageStats> => {
   });
 };
 
-export const formatStorage = (path: string): Promise<void> => {
-  return new Promise(resolve => {
-    console.log(`Formatting ${path}...`);
-    setTimeout(() => {
-      INITIAL_STORAGE.used = 0; // Reset usage
-      resolve();
-    }, 3000);
-  });
+export const formatStorage = async (path: string): Promise<void> => {
+    try {
+        const res = await fetch('/api/storage/format', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path })
+        });
+
+        if (!res.ok) {
+             const errorData = await res.json();
+             throw new Error(errorData.error || "Erro desconhecido ao formatar");
+        }
+
+        // Reset local usage stats for UI
+        INITIAL_STORAGE.used = 0; 
+
+    } catch (e) {
+        console.error("Erro na formatação:", e);
+        throw e; // Propagate to UI
+    }
 };
 
 // Config

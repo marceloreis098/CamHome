@@ -27,7 +27,11 @@ const MAC_VENDORS = {
     '00:1d:2d': 'Wyze',
     '00:eb:d5': 'Tuya/Generic',
     'dc:4f:22': 'Espressif (ESP32-Cam)',
-    '48:8f:4c': 'Vstarcam/Eye4'
+    '48:8f:4c': 'Vstarcam/Eye4',
+    '00:12:17': 'Cisco-Linksys',
+    '00:1b:11': 'D-Link',
+    '00:24:8c': 'Asus',
+    'd8:50:e6': 'Asus'
 };
 
 // URL Patterns based on Vendor/Port
@@ -37,7 +41,9 @@ const URL_PATTERNS = {
     'Axis': 'http://[IP]/axis-cgi/jpg/image.cgi',
     'Foscam': 'http://[IP]/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&usr=[USER]&pwd=[PASS]',
     'Vstarcam/Eye4': 'http://[IP]/snapshot.cgi?user=[USER]&pwd=[PASS]',
-    'ONVIF_8080': 'http://[IP]:8080/onvif/snapshot', // Generic ONVIF on port 8080
+    'ONVIF_8080': 'http://[IP]:8080/onvif/snapshot', 
+    'Yoosee': 'http://[IP]:5000/snapshot',
+    'XiongMai': 'http://[IP]/snap.jpg', // Often needs Active-X, but sometimes works
     'Generic': 'http://[IP]:8080/shot.jpg' 
 };
 
@@ -98,12 +104,47 @@ function identifyVendor(mac) {
 
 // --- API ---
 
+// 1. Storage Format / Clean API
+app.post('/api/storage/format', async (req, res) => {
+    const { path: targetPath } = req.body;
+
+    if (!targetPath) {
+        return res.status(400).json({ error: "Caminho não especificado." });
+    }
+
+    // Safety check: Prevent formatting root or crucial system folders
+    const forbiddenPaths = ['/', '/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/proc', '/root', '/run', '/sbin', '/sys', '/usr', '/var'];
+    if (forbiddenPaths.includes(targetPath) || targetPath === os.homedir()) {
+         return res.status(403).json({ error: "Ação bloqueada: Caminho do sistema protegido." });
+    }
+
+    try {
+        console.log(`[Storage] Iniciando limpeza em: ${targetPath}`);
+        
+        // Check if path exists
+        if (fs.existsSync(targetPath)) {
+             // Remove all files recursively (Simulates formatting a partition mount point)
+             await fs.promises.rm(targetPath, { recursive: true, force: true });
+        }
+        
+        // Recreate the empty folder immediately so recording can continue
+        await fs.promises.mkdir(targetPath, { recursive: true });
+
+        console.log(`[Storage] Limpeza concluída em: ${targetPath}`);
+        res.json({ success: true, message: "Diretório limpo com sucesso." });
+    } catch (error) {
+        console.error(`[Storage] Erro ao formatar:`, error);
+        res.status(500).json({ error: `Falha ao limpar disco: ${error.message}` });
+    }
+});
+
+// 2. Network Scan API
 app.get('/api/scan', (req, res) => {
     const subnet = getLocalNetwork();
-    console.log(`[Scanner] Iniciando scan em: ${subnet}`);
+    console.log(`[Scanner] Iniciando scan profundo em: ${subnet}`);
 
-    // Scan common camera ports including 8080 (gSOAP/ONVIF) and 81 (Vstarcam Web)
-    const command = `nmap -p 554,80,81,8080,8000,37777,8899,1935 --open -oG - -T4 ${subnet}`;
+    const ports = "554,80,81,88,443,1935,5000,5554,6688,8000,8001,8080,8081,8090,8899,10080,34567,37777";
+    const command = `nmap -p ${ports} --open -oG - -T4 ${subnet}`;
 
     exec(command, (error, stdout, stderr) => {
         if (error) {
@@ -129,20 +170,26 @@ app.get('/api/scan', (req, res) => {
                     let model = "Câmera IP";
                     let suggestedUrl = "";
 
-                    // Heuristics based on Ports
                     const has8000 = line.includes('8000/open'); // Hikvision
                     const has37777 = line.includes('37777/open'); // Dahua
                     const has8899 = line.includes('8899/open'); // ONVIF
                     const has8080 = line.includes('8080/open'); // HTTP Alt / gSOAP
                     const has554 = line.includes('554/open'); // RTSP
                     const has81 = line.includes('81/open'); // Vstarcam Alt
+                    const has34567 = line.includes('34567/open'); // XiongMai
+                    const has5000 = line.includes('5000/open');   // Yoosee/ONVIF
+                    const has1935 = line.includes('1935/open');   // RTMP
 
                     if (has8000 && manufacturer === 'Genérico') manufacturer = 'Hikvision (Detectado por Porta)';
                     if (has37777 && manufacturer === 'Genérico') manufacturer = 'Dahua/Intelbras (Detectado por Porta)';
                     
-                    // Specific Logic for your cameras
                     if (manufacturer.includes('Vstarcam')) {
                         model = "Vstarcam / Eye4 IP Cam";
+                    } else if (has34567) {
+                        model = "Câmera XiongMai (XM / CMS)";
+                        manufacturer = "XiongMai/Generic";
+                    } else if (has5000) {
+                         model = "Câmera Yoosee / ONVIF";
                     } else if (has8080 && has554) {
                         model = "Câmera ONVIF / gSOAP (Porta 8080)";
                     } else if (has554) {
@@ -151,11 +198,9 @@ app.get('/api/scan', (req, res) => {
                         model = "Webcam / Web Server";
                     }
 
-                    // Set Suggested URL Pattern
                     if (URL_PATTERNS[manufacturer]) {
                          suggestedUrl = URL_PATTERNS[manufacturer].replace('[IP]', ip);
                     } 
-                    // Fallbacks
                     else if (manufacturer.includes('Hikvision')) {
                         suggestedUrl = URL_PATTERNS['Hikvision'].replace('[IP]', ip);
                     } else if (manufacturer.includes('Dahua') || manufacturer.includes('Intelbras')) {
@@ -163,10 +208,10 @@ app.get('/api/scan', (req, res) => {
                     } else if (manufacturer.includes('Vstarcam') || has81) {
                          suggestedUrl = `http://${ip}/snapshot.cgi?user=[USER]&pwd=[PASS]`;
                     } else if (has8080) {
-                         // Common for Hipcam/gSOAP devices
                          suggestedUrl = `http://${ip}:8080/onvif/snapshot`; 
+                    } else if (has34567) {
+                         suggestedUrl = `http://${ip}/snap.jpg`;
                     } else {
-                        // Generic Fallback
                         suggestedUrl = `http://${ip}/snapshot.jpg`;
                     }
 

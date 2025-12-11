@@ -27,6 +27,7 @@ const CAMERA_PRESETS = [
     { label: 'Hikvision / HiLook', value: 'hikvision', url: 'http://[IP]/ISAPI/Streaming/channels/101/picture' },
     { label: 'Intelbras / Dahua', value: 'dahua', url: 'http://[IP]/cgi-bin/snapshot.cgi?channel=1' },
     { label: 'Yoosee (ONVIF 5000)', value: 'yoosee', url: 'http://[IP]:5000/snapshot' },
+    { label: 'XiongMai (XM / CMS)', value: 'xiongmai', url: 'http://[IP]/snap.jpg' },
     { label: 'Genérica (Porta 80)', value: 'generic', url: 'http://[IP]/snapshot.jpg' }
 ];
 
@@ -218,9 +219,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
     }
     if (confirm(`ATENÇÃO: Isso apagará TODOS os dados em ${selectedPath}. Deseja continuar?`)) {
         setLoading(true);
-        await formatStorage(selectedPath);
-        setLoading(false);
-        alert("Formatação concluída (Simulação).");
+        try {
+            await formatStorage(selectedPath);
+            alert("Formatação/Limpeza concluída com sucesso.");
+        } catch (e) {
+            alert("Erro ao formatar: " + (e as Error).message);
+        } finally {
+            setLoading(false);
+        }
     }
   };
 
@@ -417,7 +423,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                  </div>
                  
                  {isScanning && (
-                     <div className="py-8 text-center text-gray-500 animate-pulse">Procurando dispositivos compatíveis (ONVIF/RTSP)...</div>
+                     <div className="py-8 text-center text-gray-500 animate-pulse">Procurando dispositivos compatíveis (ONVIF/RTSP/RTMP/HTTP)...</div>
                  )}
 
                  {!isScanning && scannedOnce && (
