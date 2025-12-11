@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { Camera, CameraStatus, FileNode, SystemConfig, AccessLog, NotificationLevel, User, DiscoveredDevice } from '../types';
 import { fetchFileSystem, fetchSystemConfig, updateSystemConfig, fetchAccessLogs, fetchUsers, saveUser, deleteUser, scanNetworkForDevices, formatStorage } from '../services/mockCameraService';
-import { CogIcon, HddIcon, FolderIcon, FileIcon, GlobeIcon, LockIcon, UserIcon, SmartphoneIcon, SignalIcon, BellIcon, CameraIcon, CheckCircleIcon } from './Icons';
+import { CogIcon, HddIcon, FolderIcon, FileIcon, GlobeIcon, LockIcon, UserIcon, SmartphoneIcon, SignalIcon, BellIcon, CameraIcon, CheckCircleIcon, ExclamationCircleIcon, SparklesIcon } from './Icons';
 
 interface SettingsPanelProps {
   cameras: Camera[];
@@ -56,6 +55,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
   // New Camera State
   const [useHttps, setUseHttps] = useState(false);
 
+  // Test Connection State
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState('');
+  const [testImageObj, setTestImageObj] = useState<string | null>(null);
+
   useEffect(() => {
     if (activeSection === 'storage-config' && !fileSystem) {
       fetchFileSystem().then(setFileSystem);
@@ -66,10 +70,65 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
     if (!systemConfig) {
       fetchSystemConfig().then(setSystemConfig);
     }
-  }, [activeSection, fileSystem, systemConfig]);
+    // Reset test state when section changes
+    setTestStatus('idle');
+    setTestMessage('');
+    setTestImageObj(null);
+  }, [activeSection, fileSystem, systemConfig, selectedCameraId]);
 
   const selectedCamera = cameras.find(c => c.id === selectedCameraId);
   
+  // --- HELPERS ---
+  const handleTestConnection = async () => {
+      // Get values from DOM directly since we are using uncontrolled inputs
+      const urlInput = document.querySelector('input[name="thumbnailUrl"]') as HTMLInputElement;
+      const userInput = document.querySelector('input[name="username"]') as HTMLInputElement;
+      const passInput = document.querySelector('input[name="password"]') as HTMLInputElement;
+
+      if (!urlInput || !urlInput.value) {
+          setTestStatus('error');
+          setTestMessage('URL é obrigatória');
+          return;
+      }
+
+      setTestStatus('testing');
+      setTestMessage('Conectando...');
+      setTestImageObj(null);
+
+      try {
+          // Construct Proxy URL
+          const isDev = process.env.NODE_ENV === 'development' || window.location.port === '1234';
+          const baseUrl = isDev ? `http://${window.location.hostname}:3000` : '';
+          
+          const params = new URLSearchParams();
+          params.append('url', urlInput.value);
+          if (userInput?.value) params.append('username', userInput.value);
+          if (passInput?.value) params.append('password', passInput.value);
+          params.append('_t', Date.now().toString());
+
+          const proxyUrl = `${baseUrl}/api/proxy?${params.toString()}`;
+
+          const res = await fetch(proxyUrl);
+          if (!res.ok) {
+              const text = await res.text();
+              throw new Error(`Erro ${res.status}: ${text}`);
+          }
+
+          const blob = await res.blob();
+          if (blob.size < 100) throw new Error("Arquivo muito pequeno. Provavelmente erro.");
+          if (!blob.type.startsWith('image')) throw new Error(`Formato inválido: ${blob.type}`);
+
+          const imageUrl = URL.createObjectURL(blob);
+          setTestImageObj(imageUrl);
+          setTestStatus('success');
+          setTestMessage('Sucesso! Imagem capturada.');
+
+      } catch (e: any) {
+          setTestStatus('error');
+          setTestMessage(e.message || 'Falha na conexão');
+      }
+  };
+
   // --- CAMERA HANDLERS ---
   const handleCameraSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -351,6 +410,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
     );
   };
 
+  // --- RENDER HELPERS ---
+  const renderTestResult = () => {
+      if (testStatus === 'idle') return null;
+      return (
+          <div className={`mt-2 p-3 rounded-lg border flex flex-col gap-2 ${testStatus === 'success' ? 'bg-green-900/20 border-green-700' : testStatus === 'error' ? 'bg-red-900/20 border-red-700' : 'bg-gray-700 border-gray-600'}`}>
+              <div className="flex items-center gap-2">
+                 {testStatus === 'testing' && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
+                 {testStatus === 'success' && <CheckCircleIcon className="w-5 h-5 text-green-500" />}
+                 {testStatus === 'error' && <ExclamationCircleIcon className="w-5 h-5 text-red-500" />}
+                 <span className={`text-sm font-semibold ${testStatus === 'success' ? 'text-green-300' : testStatus === 'error' ? 'text-red-300' : 'text-gray-300'}`}>
+                    {testMessage}
+                 </span>
+              </div>
+              {testImageObj && (
+                  <div className="mt-2 rounded overflow-hidden border border-gray-600 bg-black">
+                      <img src={testImageObj} alt="Test" className="w-full h-auto max-h-48 object-contain" />
+                  </div>
+              )}
+          </div>
+      );
+  };
+
 
   if (!systemConfig) return <div className="p-10 text-center text-gray-500">Carregando configurações...</div>;
 
@@ -556,9 +637,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                     </div>
                     
                     <div>
-                        <label className="block text-sm text-gray-400 mb-1">URL Snapshot (HTTP/HTTPS)</label>
+                        <div className="flex justify-between items-end mb-1">
+                            <label className="block text-sm text-gray-400">URL Snapshot (HTTP/HTTPS)</label>
+                            <button 
+                                type="button" 
+                                onClick={handleTestConnection}
+                                className="text-xs text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1"
+                            >
+                                <SignalIcon className="w-3 h-3" /> Testar Conexão
+                            </button>
+                        </div>
                         <input required name="thumbnailUrl" placeholder={useHttps ? "https://192.168.1.X/snapshot.cgi..." : "http://192.168.1.X/snapshot.cgi..."} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
                         <p className="text-[10px] text-gray-500 mt-1">Esta URL permite ver a câmera no painel.</p>
+                        
+                        {/* TEST RESULT AREA */}
+                        {renderTestResult()}
                     </div>
 
                     <div>
@@ -840,8 +933,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                   <input name="ip" defaultValue={selectedCamera.ip} pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$" className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-orange-500" />
                 </div>
                 <div>
-                   <label className="block text-sm text-gray-400 mb-1">URL da Imagem/Snapshot</label>
+                    <div className="flex justify-between items-end mb-1">
+                        <label className="block text-sm text-gray-400">URL Snapshot (HTTP/HTTPS)</label>
+                        <button 
+                            type="button" 
+                            onClick={handleTestConnection}
+                            className="text-xs text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1"
+                        >
+                            <SignalIcon className="w-3 h-3" /> Testar Conexão
+                        </button>
+                    </div>
                    <input name="thumbnailUrl" defaultValue={selectedCamera.thumbnailUrl} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-orange-500" />
+                   {renderTestResult()}
                 </div>
                  <div>
                    <label className="block text-sm text-gray-400 mb-1">URL Stream (RTSP)</label>
