@@ -799,7 +799,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                                 <SignalIcon className="w-3 h-3" /> Testar Conexão
                             </button>
                         </div>
-                        <input required name="thumbnailUrl" placeholder={useHttps ? "https://192.168.1.X/snapshot.cgi..." : "http://192.168.1.X/snapshot.cgi..."} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
+                        <input name="thumbnailUrl" placeholder={useHttps ? "https://192.168.1.X/snapshot.cgi..." : "http://192.168.1.X/snapshot.cgi..."} className="w-full bg-gray-900 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-green-500" />
                         <p className="text-[10px] text-gray-500 mt-1">Esta URL permite ver a câmera no painel.</p>
                         
                         {/* TEST RESULT AREA */}
