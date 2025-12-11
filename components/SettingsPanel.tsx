@@ -212,12 +212,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
           const baseUrl = isDev ? `http://${window.location.hostname}:3000` : '';
           
           const params = new URLSearchParams();
-          params.append('url', urlInput.value);
-          if (userInput?.value) params.append('username', userInput.value);
-          if (passInput?.value) params.append('password', passInput.value);
+          let endpoint = '/api/proxy';
+          let finalUrl = urlInput.value;
+
+          // CHECK FOR RTSP
+          if (finalUrl.trim().toLowerCase().startsWith('rtsp://')) {
+              endpoint = '/api/rtsp-snapshot';
+              // Add auth to RTSP URL if not present but provided in fields
+              if (userInput?.value && passInput?.value && !finalUrl.includes('@')) {
+                  finalUrl = finalUrl.replace('rtsp://', `rtsp://${userInput.value}:${passInput.value}@`);
+              }
+              params.append('url', finalUrl);
+          } else {
+              // STANDARD HTTP
+              params.append('url', finalUrl);
+              if (userInput?.value) params.append('username', userInput.value);
+              if (passInput?.value) params.append('password', passInput.value);
+          }
+
           params.append('_t', Date.now().toString());
 
-          const proxyUrl = `${baseUrl}/api/proxy?${params.toString()}`;
+          const proxyUrl = `${baseUrl}${endpoint}?${params.toString()}`;
 
           const res = await fetch(proxyUrl);
           if (!res.ok) {

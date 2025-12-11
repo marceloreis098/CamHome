@@ -38,14 +38,29 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
       const baseUrl = isDev ? `http://${window.location.hostname}:3000` : '';
       
       const params = new URLSearchParams();
-      params.append('url', camera.thumbnailUrl);
-      if (camera.username) params.append('username', camera.username);
-      if (camera.password) params.append('password', camera.password);
+      
+      // Handle RTSP vs HTTP
+      let endpoint = '/api/proxy';
+      if (camera.thumbnailUrl.trim().toLowerCase().startsWith('rtsp://')) {
+          endpoint = '/api/rtsp-snapshot';
+          // For RTSP, user/pass are usually embedded in URL, but we append just in case logic needs it
+          let finalUrl = camera.thumbnailUrl;
+          if (camera.username && camera.password && !finalUrl.includes('@')) {
+              // Insert credentials if missing
+              finalUrl = finalUrl.replace('rtsp://', `rtsp://${camera.username}:${camera.password}@`);
+          }
+          params.append('url', finalUrl);
+      } else {
+          // Standard HTTP/HTTPS
+          params.append('url', camera.thumbnailUrl);
+          if (camera.username) params.append('username', camera.username);
+          if (camera.password) params.append('password', camera.password);
+      }
       
       // Cache buster
       params.append('_t', refreshTrigger.toString());
 
-      return `${baseUrl}/api/proxy?${params.toString()}`;
+      return `${baseUrl}${endpoint}?${params.toString()}`;
   };
 
   const handleAnalyze = async () => {
@@ -121,7 +136,7 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80 p-6 text-center">
                 <SignalIcon className="w-10 h-10 text-red-500 mb-2" />
                 <p className="text-white font-bold text-sm">Sem Sinal / Erro de Autenticação</p>
-                <p className="text-xs text-gray-400 mt-1">Verifique IP, URL de Snapshot ou Senha nas configurações.</p>
+                <p className="text-xs text-gray-400 mt-1">Verifique IP, URL (RTSP/HTTP) ou Senha.</p>
                 <button 
                     onClick={() => { setImgError(false); setIsLive(true); setRefreshTrigger(prev => prev+1); }}
                     className="mt-4 bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-xs text-white"

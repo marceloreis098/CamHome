@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const os = require('os');
 const fs = require('fs');
 
@@ -193,6 +193,50 @@ app.get('/api/proxy', async (req, res) => {
         console.error("Proxy Error:", e.message);
         res.status(502).send("Failed to reach camera: " + e.message);
     }
+});
+
+// 1.5 RTSP SNAPSHOT (FFMPEG) - NEW
+app.get('/api/rtsp-snapshot', (req, res) => {
+    let { url } = req.query;
+    if (!url) return res.status(400).send('RTSP URL missing');
+
+    // Security check: simple validation
+    if (!url.startsWith('rtsp://') && !url.startsWith('rtsps://')) {
+        return res.status(400).send('Invalid protocol. Must be RTSP.');
+    }
+
+    // FFmpeg arguments to capture a single frame
+    const args = [
+        '-y',               // Overwrite output files
+        '-rtsp_transport', 'tcp', // Force TCP (more stable for IP cams than UDP)
+        '-i', url,          // Input URL
+        '-f', 'image2',     // Output format image
+        '-vframes', '1',    // Grab 1 frame
+        '-q:v', '5',        // Quality (2-31, lower is better, 5 is good balance)
+        '-'                 // Output to pipe (stdout)
+    ];
+
+    const ffmpeg = spawn('ffmpeg', args);
+
+    // Pipe stdout (the image data) to the response
+    res.contentType('image/jpeg');
+    ffmpeg.stdout.pipe(res);
+
+    ffmpeg.stderr.on('data', (data) => {
+        // Uncomment to debug FFmpeg errors
+        // console.error(`FFmpeg Log: ${data}`); 
+    });
+
+    ffmpeg.on('error', (err) => {
+        console.error('Failed to start FFmpeg:', err);
+        if (!res.headersSent) res.status(500).send('FFmpeg failed to start. Is it installed? (sudo apt install ffmpeg)');
+    });
+
+    ffmpeg.on('close', (code) => {
+        if (code !== 0) {
+            console.log(`FFmpeg process exited with code ${code} for URL ${url}`);
+        }
+    });
 });
 
 // 2. Storage Format
