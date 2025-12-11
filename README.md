@@ -10,12 +10,28 @@ Sistema de vigilância leve e inteligente projetado para Orange Pi rodando Ubunt
 
 ---
 
-## 🔧 Instalação Manual (Passo a Passo)
+## 🚀 Instalação Rápida (Recomendada)
 
-Siga estes comandos no terminal do seu servidor para colocar a aplicação no ar.
+Dentro da pasta do projeto, rode o script de configuração automática. Ele instalará o Node.js, as dependências e compilará o site.
+
+```bash
+# 1. Dar permissão de execução ao script
+chmod +x setup.sh
+
+# 2. Rodar o script
+./setup.sh
+```
+
+Se tudo der certo, pule para o **Passo 3** abaixo (Implantar no Servidor Web).
+
+---
+
+## 🔧 Instalação Manual
+
+Caso prefira fazer passo a passo ou o script falhe.
 
 ### 1. Instalar Dependências do Sistema
-Instale o servidor web Nginx, Git e o Node.js (versão 20).
+Instale o servidor web Nginx, Git e o Node.js.
 
 ```bash
 # Atualizar lista de pacotes
@@ -25,10 +41,23 @@ sudo apt install -y curl git nginx
 # Adicionar repositório do Node.js 20 e instalar
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
+
+# VERIFICAÇÃO IMPORTANTE:
+# Rode este comando. Se der erro, o Node não foi instalado.
+node -v
+npm -v
 ```
 
 ### 2. Baixar e Compilar o Projeto
-Baixe o código fonte e gere os arquivos otimizados para produção.
+
+Se você encontrou erro de "npm: command not found" no passo anterior, instale o gerenciador de pacotes manualmente antes de prosseguir:
+
+```bash
+sudo apt update
+sudo apt install -y nodejs npm
+```
+
+Agora, prossiga com o download e compilação:
 
 ```bash
 # Clonar o repositório
@@ -41,10 +70,9 @@ cd CamHome
 npm install
 
 # Compilar o projeto (Gera a pasta 'dist')
-# IMPORTANTE: Aguarde o comando finalizar sem erros! Se der erro, a pasta dist não será criada.
 npm run build
 
-# Verifique se a pasta foi criada corretamente (deve listar index.html e outros arquivos)
+# Verifique se a pasta foi criada corretamente
 ls -F dist/
 ```
 
@@ -56,7 +84,6 @@ Mova os arquivos compilados para o diretório padrão do servidor web e ajuste a
 sudo mkdir -p /var/www/camhome
 
 # Copiar os arquivos da pasta 'dist' para o servidor
-# O ponto final (.) garante que copie todo conteúdo corretamente
 sudo cp -r dist/. /var/www/camhome/
 
 # Ajustar permissões (Crítico para evitar erro 403)
@@ -124,5 +151,3 @@ Ao carregar a tela de login, use as credenciais iniciais:
 
 - **Usuário:** `admin`
 - **Senha:** `password`
-
-> **Nota:** Recomendamos alterar a senha na aba "Configurações" após o primeiro acesso.
