@@ -151,7 +151,50 @@ async function getDirRecursive(dirPath, currentDepth = 0, maxDepth = 2) {
 
 // --- API ROUTES ---
 
-// 1. Storage Format
+// 1. IMAGE PROXY (NEW) - Fixes "Broken Image" on frontend
+app.get('/api/proxy', async (req, res) => {
+    const { url, username, password } = req.query;
+    if (!url) return res.status(400).send('URL missing');
+
+    try {
+        // Construct Request Options
+        const options = { 
+            method: 'GET',
+            headers: {},
+            // Set a timeout to prevent hanging connections
+            signal: AbortSignal.timeout(5000) 
+        };
+
+        // Handle Basic Auth manually to ensure headers are sent
+        if (username && password) {
+            const auth = Buffer.from(`${username}:${password}`).toString('base64');
+            options.headers['Authorization'] = `Basic ${auth}`;
+        }
+
+        // Fetch using Node 20 native fetch
+        const response = await fetch(url, options);
+
+        if (!response.ok) {
+            console.error(`Proxy Fetch Failed: ${response.status} for ${url}`);
+            return res.status(response.status).send(`Camera returned ${response.status}`);
+        }
+
+        // Forward Content-Type (important for images)
+        const contentType = response.headers.get('content-type');
+        if (contentType) res.set('Content-Type', contentType);
+
+        // Pipe the image stream directly to the client
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        res.send(buffer);
+
+    } catch (e) {
+        console.error("Proxy Error:", e.message);
+        res.status(502).send("Failed to reach camera: " + e.message);
+    }
+});
+
+// 2. Storage Format
 app.post('/api/storage/format', async (req, res) => {
     const { path: targetPath } = req.body;
     if (!targetPath) return res.status(400).json({ error: "Caminho não especificado." });
@@ -172,14 +215,10 @@ app.post('/api/storage/format', async (req, res) => {
     }
 });
 
-// 2. Storage Tree
+// 3. Storage Tree
 app.get('/api/storage/tree', async (req, res) => {
     try {
-        // Start scanning from /mnt (typical for external drives on Linux/OrangePi)
-        // If /mnt is empty, user might need to adjust or mount drives there.
         const tree = await getDirRecursive('/mnt', 0, 2);
-        
-        // Wrap in root node
         const root = {
             id: 'root',
             name: 'Montagens (mnt)',
@@ -194,25 +233,17 @@ app.get('/api/storage/tree', async (req, res) => {
     }
 });
 
-// 3. Network Scan
+// 4. Network Scan
 app.get('/api/scan', (req, res) => {
-    // Check for manual override via query param
     let subnet = req.query.subnet;
-
-    if (!subnet) {
-        subnet = getLocalNetwork();
-    }
+    if (!subnet) subnet = getLocalNetwork();
     
     const arpTable = getArpTable();
-    
     console.log(`[SCAN] Iniciando varredura na rede: ${subnet}`);
 
-    // Executa Nmap com Timeout para não travar o servidor se demorar muito.
-    // Timeout definido para 20 segundos (20000ms).
     exec(`nmap -sn ${subnet}`, { timeout: 20000 }, (error, stdout, stderr) => {
         if (error) {
-            console.warn(`[SCAN] Nmap falhou ou demorou muito (Timeout). Usando ARP. Erro: ${error.message}`);
-            // Fallback: Just return ARP table entries
+            console.warn(`[SCAN] Nmap falhou ou demorou. Usando ARP. Erro: ${error.message}`);
             const devices = Object.keys(arpTable).map(ip => ({
                 ip,
                 mac: arpTable[ip],
@@ -223,21 +254,18 @@ app.get('/api/scan', (req, res) => {
             return res.json(devices);
         }
 
-        // Parse Nmap output
         const lines = stdout.split('\n');
         const devices = [];
         let currentIp = null;
         let currentName = null;
 
         lines.forEach(line => {
-            // "Nmap scan report for _gateway (192.168.1.1)" or "192.168.1.55"
             if (line.startsWith('Nmap scan report for')) {
                 const parts = line.split(' ');
                 const ipPart = parts[parts.length - 1];
                 currentIp = ipPart.replace('(', '').replace(')', '');
                 currentName = parts.length > 5 ? parts[parts.length - 2] : 'Unknown';
             }
-            // "MAC Address: XX:XX:XX... (Vendor)"
             else if (line.includes('MAC Address:') && currentIp) {
                 const parts = line.split('MAC Address: ');
                 const macPart = parts[1].split(' ');
@@ -255,7 +283,6 @@ app.get('/api/scan', (req, res) => {
             }
         });
 
-        // Add any ARP entries missed by nmap (e.g. self)
         Object.keys(arpTable).forEach(ip => {
             if (!devices.find(d => d.ip === ip)) {
                 devices.push({
@@ -268,12 +295,10 @@ app.get('/api/scan', (req, res) => {
             }
         });
         
-        console.log(`[SCAN] Finalizado. ${devices.length} dispositivos encontrados.`);
         res.json(devices);
     });
 });
 
-// Catch-all for SPA (Must be last)
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });

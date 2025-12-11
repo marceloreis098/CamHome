@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Camera, CameraStatus } from '../types';
 import { SignalIcon, SparklesIcon, PhotoIcon } from './Icons';
 import { analyzeFrame } from '../services/geminiService';
@@ -11,43 +11,71 @@ interface CameraCardProps {
 const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
+  
+  // Refresh mechanism for Live View (simulating video via snapshots)
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [isLive, setIsLive] = useState(true);
+  const [imgError, setImgError] = useState(false);
 
-  const getDisplayUrl = () => {
-    if (camera.username && camera.password && camera.thumbnailUrl.startsWith('http')) {
-      // Inject credentials into the URL (e.g., http://user:pass@192...)
-      // Note: This is a basic method. Some modern browsers/scenarios block embedded credentials for security.
-      // A robust production app would use a proxy or blob fetching.
-      try {
-        const urlObj = new URL(camera.thumbnailUrl);
-        urlObj.username = camera.username;
-        urlObj.password = camera.password;
-        return urlObj.toString();
-      } catch (e) {
-        return camera.thumbnailUrl;
-      }
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (isLive && !imgError) {
+        // Refresh every 1.5 seconds to balance load vs fluidity
+        interval = setInterval(() => {
+            setRefreshTrigger(prev => prev + 1);
+        }, 1500);
     }
-    return camera.thumbnailUrl;
+    return () => clearInterval(interval);
+  }, [isLive, imgError]);
+
+  // Use the Backend Proxy to fetch images. 
+  // This solves CORS issues and Credential stripping by browsers.
+  const getProxyUrl = () => {
+      if (!camera.thumbnailUrl) return '';
+      
+      // Determine base URL (handle dev vs prod)
+      const isDev = process.env.NODE_ENV === 'development' || window.location.port === '1234';
+      const baseUrl = isDev ? `http://${window.location.hostname}:3000` : '';
+      
+      const params = new URLSearchParams();
+      params.append('url', camera.thumbnailUrl);
+      if (camera.username) params.append('username', camera.username);
+      if (camera.password) params.append('password', camera.password);
+      
+      // Cache buster
+      params.append('_t', refreshTrigger.toString());
+
+      return `${baseUrl}/api/proxy?${params.toString()}`;
   };
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setAnalysis(null);
     
-    // Pass credentials to the fetching service so Gemini can see the image
-    const base64 = await urlToBase64(camera.thumbnailUrl, camera.username, camera.password);
-    if (base64) {
-      const result = await analyzeFrame(base64);
-      setAnalysis(result);
-    } else {
-      setAnalysis("Não foi possível capturar o frame. Verifique as credenciais ou a conexão.");
+    // We can fetch the proxy URL directly to get the blob for analysis
+    try {
+        const proxyUrl = getProxyUrl();
+        const response = await fetch(proxyUrl);
+        const blob = await response.blob();
+        
+        // Convert blob to base64
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+            const base64 = (reader.result as string).split(',')[1];
+            const result = await analyzeFrame(base64);
+            setAnalysis(result);
+            setIsAnalyzing(false);
+        };
+        reader.readAsDataURL(blob);
+    } catch (e) {
+      setAnalysis("Não foi possível capturar o frame para análise.");
+      setIsAnalyzing(false);
     }
-    setIsAnalyzing(false);
   };
 
   const handleSnapshot = () => {
-    // Create a temporary link to download the image
     const link = document.createElement('a');
-    link.href = getDisplayUrl();
+    link.href = getProxyUrl(); // Download from proxy to ensure auth works
     link.download = `${camera.name.replace(/\s+/g, '_')}_${new Date().getTime()}.jpg`;
     document.body.appendChild(link);
     link.click();
@@ -63,32 +91,46 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
           <p className="text-xs text-gray-400 font-mono">{camera.ip} • {camera.model}</p>
         </div>
         <div className="flex items-center gap-2">
-          {camera.status === CameraStatus.RECORDING && (
-            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]"></span>
+          {isLive && !imgError && (
+             <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+             </span>
           )}
-          <SignalIcon className={`w-5 h-5 ${camera.status !== CameraStatus.OFFLINE ? 'text-green-500' : 'text-gray-600'}`} />
+          <SignalIcon className={`w-5 h-5 ${!imgError ? 'text-green-500' : 'text-red-500'}`} />
         </div>
       </div>
 
       {/* Feed Area */}
       <div className="relative group bg-black aspect-video flex items-center justify-center overflow-hidden">
         <img 
-          src={getDisplayUrl()} 
+          src={getProxyUrl()} 
           alt={camera.name} 
           className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
           onError={(e) => {
-            // Fallback UI if auth fails significantly
-            const target = e.target as HTMLImageElement;
-            target.style.display = 'none';
-            if (target.parentElement) {
-              const msg = document.createElement('div');
-              msg.className = "text-gray-500 text-xs text-center p-4";
-              msg.innerText = "Falha ao carregar imagem. Verifique URL/Credenciais.";
-              target.parentElement.appendChild(msg);
-            }
+             setImgError(true);
+             setIsLive(false); // Stop trying to refresh if it fails
+          }}
+          onLoad={() => {
+             if (imgError) setImgError(false); // Recovery
           }}
         />
         
+        {/* Error Overlay */}
+        {imgError && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80 p-6 text-center">
+                <SignalIcon className="w-10 h-10 text-red-500 mb-2" />
+                <p className="text-white font-bold text-sm">Sem Sinal / Erro de Autenticação</p>
+                <p className="text-xs text-gray-400 mt-1">Verifique IP, URL de Snapshot ou Senha nas configurações.</p>
+                <button 
+                    onClick={() => { setImgError(false); setIsLive(true); setRefreshTrigger(prev => prev+1); }}
+                    className="mt-4 bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-xs text-white"
+                >
+                    Tentar Novamente
+                </button>
+            </div>
+        )}
+
         {/* Overlay Controls */}
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
           <button 
@@ -115,8 +157,9 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
         </div>
 
         {/* Status Badge */}
-        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-xs text-white font-mono">
-           {new Date().toLocaleTimeString('pt-BR')}
+        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-xs text-white font-mono flex items-center gap-2">
+           <div className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
+           {isLive ? 'AO VIVO' : 'PAUSADO'}
         </div>
       </div>
 
@@ -134,9 +177,13 @@ const CameraCard: React.FC<CameraCardProps> = ({ camera }) => {
 
       {/* Footer Stats */}
       {!analysis && (
-        <div className="p-3 bg-gray-900 border-t border-gray-800 text-xs text-gray-500 flex justify-between">
+        <div className="p-3 bg-gray-900 border-t border-gray-800 text-xs text-gray-500 flex justify-between items-center">
             <span>Último Evento: {camera.lastEvent || 'Nenhum'}</span>
-            <span>Bitrate: 4096 kbps</span>
+            <div className="flex gap-2">
+                <button onClick={() => setIsLive(!isLive)} className="hover:text-white">
+                    {isLive ? 'Pausar' : 'Retomar'}
+                </button>
+            </div>
         </div>
       )}
     </div>
