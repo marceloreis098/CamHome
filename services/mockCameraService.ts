@@ -228,6 +228,9 @@ export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
     const data = await smartFetch('/api/scan', {
         headers: { 'Accept': 'application/json' }
     });
+    
+    // Safety check if response is not array
+    if (!Array.isArray(data)) throw new Error("Formato de resposta inválido");
 
     const foundDevices: DiscoveredDevice[] = data;
     const existingIps = getStoredCameras().map(c => c.ip);
@@ -239,8 +242,18 @@ export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
     }));
 
   } catch (error) {
-    console.error("Network scan error detail:", error);
-    throw error;
+    console.warn("Backend indisponível ou erro no scan. Usando Mock Data.", error);
+    
+    // FALLBACK: Retorna dados simulados para não travar a UI se o servidor estiver off
+    const mockDevices: DiscoveredDevice[] = [
+        { ip: '192.168.1.200', mac: '00:00:00:00:00:00', manufacturer: 'Backend Offline (Mock)', model: 'Server Not Running', isAdded: false }
+    ];
+    
+    const existingIps = getStoredCameras().map(c => c.ip);
+    return mockDevices.map(d => ({
+      ...d,
+      isAdded: existingIps.includes(d.ip)
+    }));
   }
 };
 

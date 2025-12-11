@@ -130,7 +130,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
   const handleAddFromScan = (device: ExtendedDiscoveredDevice) => {
     // Open the new camera form with pre-filled data
     setActiveSection('new-camera');
-    setUseHttps(false); // Default to HTTP, let user toggle
+    
+    // Auto detect HTTPS from suggested URL
+    const isHttps = device.suggestedUrl?.toLowerCase().startsWith('https') || false;
+    setUseHttps(isHttps); 
 
     // We use a timeout to let the DOM render the form, then populate inputs
     setTimeout(() => {
