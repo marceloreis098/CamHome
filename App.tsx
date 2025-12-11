@@ -115,10 +115,17 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    // 1. Clear State
     setIsAuthenticated(false);
     setCurrentUser(null);
-    sessionStorage.removeItem('camhome_user');
     setActiveTab('dashboard');
+    
+    // 2. Clear Storage
+    sessionStorage.removeItem('camhome_user');
+    localStorage.removeItem('camhome_user'); // Just in case
+    
+    // 3. FORCE RELOAD to ensure clean state and show Login Screen
+    window.location.reload();
   };
 
   const handleMarkAsRead = (id: string) => {
@@ -234,7 +241,7 @@ const App: React.FC = () => {
                
                <button 
                 onClick={handleLogout} 
-                className="bg-red-900/30 hover:bg-red-900/80 border border-red-900/50 text-red-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                className="bg-red-900/30 hover:bg-red-900/80 border border-red-900/50 text-red-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer"
                 title="Sair do Sistema"
                >
                  SAIR
@@ -317,7 +324,7 @@ const App: React.FC = () => {
                             <div className="flex gap-4">
                                 <button 
                                     onClick={handleLogout} 
-                                    className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-bold shadow-lg transition-transform active:scale-95 flex items-center gap-2"
+                                    className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-bold shadow-lg transition-transform active:scale-95 flex items-center gap-2 cursor-pointer z-10"
                                 >
                                     <LockIcon className="w-5 h-5" />
                                     Entrar como Admin
