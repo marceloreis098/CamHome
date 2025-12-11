@@ -44,13 +44,22 @@ const MAC_VENDORS = {
     'e4:5f:01': 'Raspberry Pi'
 };
 
-// Converte Netmask (ex: 255.255.255.192) para CIDR (ex: 26)
-function netmaskToCidr(netmask) {
+// Calculates CIDR suffix (e.g. 24 for 255.255.255.0)
+function getCidrSuffix(netmask) {
     if (!netmask) return 24;
     return netmask.split('.').map(Number)
       .map(part => (part >>> 0).toString(2))
       .join('')
       .split('1').length - 1;
+}
+
+// Calculates correct network base address (e.g. 192.168.1.100 & 255.255.255.192 -> 192.168.1.64)
+function calculateSubnet(ip, netmask) {
+    const ipParts = ip.split('.').map(Number);
+    const maskParts = netmask.split('.').map(Number);
+    const networkParts = ipParts.map((part, i) => part & maskParts[i]);
+    const suffix = getCidrSuffix(netmask);
+    return `${networkParts.join('.')}/${suffix}`;
 }
 
 function getLocalNetwork() {
@@ -60,24 +69,15 @@ function getLocalNetwork() {
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
             if (iface.family === 'IPv4' && !iface.internal) {
-                // Tenta usar o CIDR nativo ou calcula via Netmask para garantir suporte a /26
-                let cidrSuffix = 24;
-                if (iface.cidr) {
-                    const parts = iface.cidr.split('/');
-                    if (parts.length === 2) cidrSuffix = parts[1];
-                } else if (iface.netmask) {
-                    cidrSuffix = netmaskToCidr(iface.netmask);
+                // If we have a netmask, calculate properly
+                if (iface.netmask) {
+                    const calculated = calculateSubnet(iface.address, iface.netmask);
+                    if (iface.address.startsWith('192.168')) return calculated;
+                    if (!bestCandidate) bestCandidate = calculated;
+                } else if (iface.cidr) {
+                     // Fallback to CIDR if provided directly by Node (rarely contains correct base for subnets)
+                     bestCandidate = iface.cidr; 
                 }
-
-                // Monta a subnet (ex: 192.168.1.0/26)
-                const ipParts = iface.address.split('.');
-                // Lógica simples de subnet (assume classe C padrão para simplificar, mas usa o sufixo correto)
-                // Para cálculos mais complexos de máscara bitwise, seria necessário bibliotecas extras,
-                // mas isso cobre 99% dos casos domésticos (192.168.x.x).
-                const subnet = `${ipParts[0]}.${ipParts[1]}.${ipParts[2]}.0/${cidrSuffix}`;
-                
-                if (iface.address.startsWith('192.168')) return subnet;
-                if (!bestCandidate) bestCandidate = subnet;
             }
         }
     }
@@ -196,14 +196,20 @@ app.get('/api/storage/tree', async (req, res) => {
 
 // 3. Network Scan
 app.get('/api/scan', (req, res) => {
-    const subnet = getLocalNetwork();
+    // Check for manual override via query param
+    let subnet = req.query.subnet;
+
+    if (!subnet) {
+        subnet = getLocalNetwork();
+    }
+    
     const arpTable = getArpTable();
     
     console.log(`[SCAN] Iniciando varredura na rede: ${subnet}`);
 
     // Executa Nmap com Timeout para não travar o servidor se demorar muito.
-    // Timeout definido para 15 segundos (15000ms).
-    exec(`nmap -sn ${subnet}`, { timeout: 15000 }, (error, stdout, stderr) => {
+    // Timeout definido para 20 segundos (20000ms).
+    exec(`nmap -sn ${subnet}`, { timeout: 20000 }, (error, stdout, stderr) => {
         if (error) {
             console.warn(`[SCAN] Nmap falhou ou demorou muito (Timeout). Usando ARP. Erro: ${error.message}`);
             // Fallback: Just return ARP table entries

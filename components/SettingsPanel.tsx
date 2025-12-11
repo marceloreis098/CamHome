@@ -42,6 +42,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
   
   // Scan State
   const [isScanning, setIsScanning] = useState(false);
+  const [scanRange, setScanRange] = useState('');
   const [discoveredDevices, setDiscoveredDevices] = useState<ExtendedDiscoveredDevice[]>([]);
   const [scannedOnce, setScannedOnce] = useState(false);
 
@@ -201,7 +202,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
   const runScan = async () => {
     setIsScanning(true);
     try {
-        const devices = await scanNetworkForDevices();
+        // Pass scanRange if provided by user
+        const devices = await scanNetworkForDevices(scanRange.trim() || undefined);
         setDiscoveredDevices(devices);
         setScannedOnce(true);
     } catch(e) {
@@ -440,18 +442,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
           <div className="space-y-8">
               {/* Scan Section */}
               <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 shadow-xl">
-                 <div className="flex justify-between items-center mb-4">
+                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                      <h2 className="text-lg font-bold text-white flex items-center gap-2">
                          <SignalIcon className="w-5 h-5 text-blue-500" />
                          Descoberta de Rede
                      </h2>
-                     <button 
-                        onClick={runScan} 
-                        disabled={isScanning}
-                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded text-sm disabled:opacity-50"
-                     >
-                        {isScanning ? 'Escaneando...' : 'Escanear Rede'}
-                     </button>
+                     <div className="flex gap-2 w-full sm:w-auto">
+                        <input 
+                            type="text" 
+                            placeholder="Faixa IP (ex: 192.168.1.0/24)" 
+                            className="bg-gray-900 border border-gray-600 rounded text-xs px-2 py-1.5 text-white w-full sm:w-48 placeholder-gray-500"
+                            value={scanRange}
+                            onChange={(e) => setScanRange(e.target.value)}
+                        />
+                        <button 
+                            onClick={runScan} 
+                            disabled={isScanning}
+                            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded text-sm disabled:opacity-50 whitespace-nowrap font-semibold"
+                        >
+                            {isScanning ? 'Escaneando...' : 'Escanear'}
+                        </button>
+                     </div>
                  </div>
                  
                  {isScanning && (

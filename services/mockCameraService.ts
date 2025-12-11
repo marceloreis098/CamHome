@@ -222,10 +222,13 @@ export const updateCamera = (updatedCamera: Camera): Promise<void> => {
 };
 
 // Network Scan (REAL API CALL)
-export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
+export const scanNetworkForDevices = async (manualSubnet?: string): Promise<DiscoveredDevice[]> => {
   try {
+    // Construct Query
+    const query = manualSubnet ? `?subnet=${encodeURIComponent(manualSubnet)}` : '';
+    
     // Use smartFetch to handle connection issues automatically
-    const data = await smartFetch('/api/scan', {
+    const data = await smartFetch(`/api/scan${query}`, {
         headers: { 'Accept': 'application/json' }
     });
     
