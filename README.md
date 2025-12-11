@@ -31,26 +31,17 @@ Se tudo der certo, pule para o **Passo 3** abaixo (Implantar no Servidor Web).
 Caso prefira fazer passo a passo ou o script falhe.
 
 ### 1. Instalar Dependências do Sistema
-Instale o servidor web Nginx, Git e o Node.js.
+Instale o servidor web Nginx e o Git.
 
 ```bash
 # Atualizar lista de pacotes
 sudo apt update
 sudo apt install -y curl git nginx
-
-# Adicionar repositório do Node.js 20 e instalar
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-
-# VERIFICAÇÃO IMPORTANTE:
-# Rode este comando. Se der erro, o Node não foi instalado.
-node -v
-npm -v
 ```
 
 ### 2. Baixar e Compilar o Projeto
 
-Se você encontrou erro de "npm: command not found" no passo anterior, instale o gerenciador de pacotes manualmente antes de prosseguir:
+Antes de prosseguir, é fundamental instalar o **Node.js** e o **npm**. Se você receber erros como `npm: command not found` ou `parcel: not found`, execute:
 
 ```bash
 sudo apt update
