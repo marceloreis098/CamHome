@@ -238,14 +238,15 @@ app.get('/api/storage/tree', async (req, res) => {
 // 3. Network Scan API
 app.get('/api/scan', (req, res) => {
     const subnet = getLocalNetwork();
-    console.log(`[Scanner] Iniciando scan (SUDO) em: ${subnet}`);
+    console.log(`[Scanner] Iniciando scan em: ${subnet}`);
+    console.log(`[Scanner] Nota: Certifique-se de rodar este script com 'sudo' para melhores resultados.`);
 
-    // User requested explicit scan on ports 80 and 554
     const ports = "80,554";
     
-    // Using sudo as requested. 
-    // -oG - ensures we can parse the output easily in the code below.
-    const command = `sudo nmap -p ${ports} --open -oG - -T4 ${subnet}`;
+    // REMOVE SUDO from here. 
+    // Running sudo inside exec() causes it to hang waiting for password if not configured.
+    // The user should run "sudo node server.js" instead.
+    const command = `nmap -p ${ports} --open -oG - -T4 ${subnet}`;
 
     exec(command, (error, stdout, stderr) => {
         if (error) {
@@ -253,8 +254,7 @@ app.get('/api/scan', (req, res) => {
             if (error.message.includes('not found')) {
                 return res.status(500).json({ error: "Nmap não instalado. Execute: sudo apt install nmap" });
             }
-            // Sudo errors might appear here if no-password sudo isn't configured
-            return res.status(500).json({ error: "Falha ao executar scan. Verifique permissões de sudo ou instalação do Nmap." });
+            return res.status(500).json({ error: `Falha na execução do Nmap: ${error.message}` });
         }
 
         const arpTable = getArpTable();

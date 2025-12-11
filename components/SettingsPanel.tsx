@@ -173,7 +173,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
         setDiscoveredDevices(devices);
         setScannedOnce(true);
     } catch(e) {
-        alert("Erro ao escanear. Verifique se o backend está rodando e se o 'nmap' está instalado.");
+        alert("Erro no scan: " + (e as Error).message);
     }
     setIsScanning(false);
   };

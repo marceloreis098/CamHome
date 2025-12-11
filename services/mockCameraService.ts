@@ -165,7 +165,12 @@ export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
     const response = await fetch('/api/scan');
     
     if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`);
+        let errMsg = `Server returned ${response.status}`;
+        try {
+            const errBody = await response.json();
+            if (errBody.error) errMsg = errBody.error;
+        } catch(e) {}
+        throw new Error(errMsg);
     }
 
     const foundDevices: DiscoveredDevice[] = await response.json();
@@ -179,7 +184,6 @@ export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
 
   } catch (error) {
     console.error("Network scan error. Ensure server is running.", error);
-    // Return empty but user needs to know it failed
     throw error;
   }
 };
