@@ -19,16 +19,110 @@ interface ExtendedDiscoveredDevice extends DiscoveredDevice {
 
 type SettingsSection = 'camera-config' | 'storage-config' | 'general-config' | 'security-config' | 'network-config' | 'new-camera' | 'user-management';
 
-// Common Presets based on User Feedback
+// EXPANDED PRESETS BASED ON USER SPREADSHEET
 const CAMERA_PRESETS = [
-    { label: 'Selecione um Modelo (Ajuda Rápida)', value: '' },
-    { label: 'Vstarcam / Eye4', value: 'vstarcam', url: 'http://[IP]/snapshot.cgi?user=[USER]&pwd=[PASS]' },
-    { label: 'Genérica ONVIF (Porta 8080)', value: 'onvif_8080', url: 'http://[IP]:8080/onvif/snapshot' },
-    { label: 'Hikvision / HiLook', value: 'hikvision', url: 'http://[IP]/ISAPI/Streaming/channels/101/picture' },
-    { label: 'Intelbras / Dahua', value: 'dahua', url: 'http://[IP]/cgi-bin/snapshot.cgi?channel=1' },
-    { label: 'Yoosee (ONVIF 5000)', value: 'yoosee', url: 'http://[IP]:5000/snapshot' },
-    { label: 'XiongMai (XM / CMS)', value: 'xiongmai', url: 'http://[IP]/snap.jpg' },
-    { label: 'Genérica (Porta 80)', value: 'generic', url: 'http://[IP]/snapshot.jpg' }
+    { label: 'Selecione um Modelo (Preenchimento Automático)', value: '', keywords: [] },
+    
+    // HIKVISION Family
+    { 
+      label: 'Hikvision / HiLook (Moderno)', 
+      value: 'hikvision_new', 
+      keywords: ['hikvision', 'hilook'],
+      url: 'http://[IP]/ISAPI/Streaming/channels/101/picture',
+      stream: 'rtsp://[IP]:554/Streaming/Channels/101'
+    },
+    { 
+      label: 'Hikvision (Antigo)', 
+      value: 'hikvision_old', 
+      keywords: ['hikvision'],
+      url: 'http://[IP]/onvif/snapshot',
+      stream: 'rtsp://[IP]:554/onvif1'
+    },
+
+    // DAHUA / INTELBRAS Family
+    { 
+      label: 'Dahua / Intelbras (Padrão)', 
+      value: 'dahua', 
+      keywords: ['dahua', 'intelbras', 'amcrest', 'lorex'],
+      url: 'http://[IP]/cgi-bin/snapshot.cgi?channel=1',
+      stream: 'rtsp://[IP]:554/cam/realmonitor?channel=1&subtype=0'
+    },
+    { 
+      label: 'Dahua PTZ / Dome', 
+      value: 'dahua_ptz', 
+      keywords: ['dahua', 'ptz'],
+      url: 'http://[IP]/cgi-bin/snapshot.cgi?[LOGIN]', 
+      stream: 'rtsp://[IP]:554/cam/realmonitor?channel=1&subtype=0'
+    },
+    
+    // MICROSEVEN (M7) - NEW
+    { 
+      label: 'Microseven (M7 Series)', 
+      value: 'microseven', 
+      keywords: ['microseven'],
+      url: 'http://[IP]/jpgimage/1/image.jpg',
+      stream: 'rtsp://[IP]:554/11'
+    },
+
+    // GENERIC / CHINA CAMS
+    { 
+      label: 'ONVIF Genérica (Porta 8080)', 
+      value: 'onvif_8080', 
+      keywords: ['onvif', 'generic'],
+      url: 'http://[IP]:8080/onvif/snapshot',
+      stream: 'rtsp://[IP]:8080/onvif1'
+    },
+    { 
+      label: 'ONVIF Genérica (Porta 80)', 
+      value: 'onvif_80', 
+      keywords: ['onvif'],
+      url: 'http://[IP]/onvif/snapshot',
+      stream: 'rtsp://[IP]:554/onvif1'
+    },
+    { 
+      label: 'Yoosee / CMS (Porta 5000)', 
+      value: 'yoosee', 
+      keywords: ['yoosee', 'gwelltimes'],
+      url: 'http://[IP]:5000/snapshot',
+      stream: 'rtsp://[IP]:554/onvif1'
+    },
+    { 
+      label: 'Vstarcam / Eye4', 
+      value: 'vstarcam', 
+      keywords: ['vstarcam', 'eye4'],
+      url: 'http://[IP]/snapshot.cgi?user=[USER]&pwd=[PASS]',
+      stream: 'rtsp://[IP]:554/livestream/11'
+    },
+    { 
+      label: 'XiongMai (XM / iCSee)', 
+      value: 'xiongmai', 
+      keywords: ['xiongmai', 'general'],
+      url: 'http://[IP]/snap.jpg',
+      stream: 'rtsp://[IP]:554/user=[USER]&password=[PASS]&channel=1&stream=0.sdp?'
+    },
+
+    // BRAND SPECIFIC
+    { 
+      label: 'Axis Communications', 
+      value: 'axis', 
+      keywords: ['axis'],
+      url: 'http://[IP]/axis-cgi/jpg/image.cgi',
+      stream: 'rtsp://[IP]:554/axis-media/media.amp'
+    },
+    { 
+      label: 'Foscam (HD)', 
+      value: 'foscam', 
+      keywords: ['foscam'],
+      url: 'http://[IP]/cgi-bin/CGIProxy.fcgi?cmd=snapPicture2&usr=[USER]&pwd=[PASS]',
+      stream: 'rtsp://[IP]:554/videoMain'
+    },
+    { 
+      label: 'TP-Link Tapo/Kasa', 
+      value: 'tplink', 
+      keywords: ['tp-link', 'tapo'],
+      url: 'http://[IP]:8800/onvif/snapshot', // Often needs port 8800 or 2020
+      stream: 'rtsp://[IP]:554/stream1'
+    }
 ];
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, onAddCamera, onDeleteCamera, onConfigChange, currentUser }) => {
@@ -54,6 +148,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
 
   // New Camera State
   const [useHttps, setUseHttps] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState('');
 
   // Test Connection State
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -191,9 +286,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
     // Open the new camera form with pre-filled data
     setActiveSection('new-camera');
     
-    // Auto detect HTTPS from suggested URL
+    // Auto detect HTTPS from suggested URL (rarely populated by scan, usually we guess)
     const isHttps = device.suggestedUrl?.toLowerCase().startsWith('https') || false;
     setUseHttps(isHttps); 
+
+    // Intelligent Preset Matching based on Manufacturer/MAC vendor
+    const detectedVendor = device.manufacturer.toLowerCase();
+    let matchedPreset = CAMERA_PRESETS.find(p => 
+        p.keywords.some(k => detectedVendor.includes(k))
+    );
+
+    // Default to generic if no match
+    if (!matchedPreset) matchedPreset = CAMERA_PRESETS[0];
+
+    setSelectedPreset(matchedPreset.value);
 
     // We use a timeout to let the DOM render the form, then populate inputs
     setTimeout(() => {
@@ -202,18 +308,24 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
         const modelInput = document.querySelector('input[name="model"]') as HTMLInputElement;
         const urlInput = document.querySelector('input[name="thumbnailUrl"]') as HTMLInputElement;
         const streamInput = document.querySelector('input[name="streamUrl"]') as HTMLInputElement;
-        
+        const presetSelect = document.querySelector('select[name="preset"]') as HTMLSelectElement;
+
         if (nameInput) nameInput.value = `${device.manufacturer.split(' ')[0]} Cam`;
         if (ipInput) ipInput.value = device.ip;
-        if (modelInput) modelInput.value = device.model;
+        if (modelInput) modelInput.value = device.model !== 'Unknown' ? device.model : device.manufacturer;
         
-        if (urlInput && device.suggestedUrl) {
+        // If we matched a preset, apply its templates
+        if (matchedPreset && matchedPreset.url) {
+            let tempUrl = matchedPreset.url.replace('[IP]', device.ip);
+            let tempStream = matchedPreset.stream?.replace('[IP]', device.ip) || '';
+            
+            // Note: We don't replace [USER]/[PASS] here, user needs to fill inputs then we replace
+            if (urlInput) urlInput.value = tempUrl;
+            if (streamInput) streamInput.value = tempStream;
+            if (presetSelect) presetSelect.value = matchedPreset.value;
+        } else if (urlInput && device.suggestedUrl) {
+            // Fallback to scan suggestion if available
             urlInput.value = device.suggestedUrl;
-        }
-
-        // Try to guess RTSP stream for convenience
-        if (streamInput && device.ip) {
-            streamInput.value = `rtsp://${device.ip}:554/onvif1`;
         }
         
         const usernameInput = document.querySelector('input[name="username"]') as HTMLInputElement;
@@ -239,20 +351,28 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
   };
 
   const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const selected = CAMERA_PRESETS.find(p => p.value === e.target.value);
-      if (selected && selected.value) {
+      const newVal = e.target.value;
+      setSelectedPreset(newVal);
+
+      const selected = CAMERA_PRESETS.find(p => p.value === newVal);
+      if (selected && selected.url) {
           const ipInput = document.querySelector('input[name="ip"]') as HTMLInputElement;
           const urlInput = document.querySelector('input[name="thumbnailUrl"]') as HTMLInputElement;
+          const streamInput = document.querySelector('input[name="streamUrl"]') as HTMLInputElement;
           
           let template = selected.url;
+          let streamTemplate = selected.stream || '';
+
           if (useHttps) {
               template = template.replace('http://', 'https://');
           }
 
           if (ipInput && ipInput.value) {
               urlInput.value = template.replace('[IP]', ipInput.value);
+              streamInput.value = streamTemplate.replace('[IP]', ipInput.value);
           } else {
               urlInput.value = template;
+              streamInput.value = streamTemplate;
           }
       }
   };
@@ -625,8 +745,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                              <label className="block text-sm text-blue-400 font-bold mb-1">Assistente de Configuração</label>
                              <p className="text-xs text-gray-500 mb-2">Selecione o modelo para preencher as URLs automaticamente com base no IP acima.</p>
                              <select 
-                                name="model" 
+                                name="preset"
                                 className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                                value={selectedPreset}
                                 onChange={handlePresetChange}
                             >
                                 {CAMERA_PRESETS.map(p => (

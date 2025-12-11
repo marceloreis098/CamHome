@@ -41,7 +41,8 @@ const MAC_VENDORS = {
     'd8:50:e6': 'Asus',
     'b8:27:eb': 'Raspberry Pi',
     'dc:a6:32': 'Raspberry Pi',
-    'e4:5f:01': 'Raspberry Pi'
+    'e4:5f:01': 'Raspberry Pi',
+    '00:fc:04': 'Microseven'
 };
 
 // Calculates CIDR suffix (e.g. 24 for 255.255.255.0)
