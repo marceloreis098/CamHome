@@ -245,45 +245,34 @@ export const updateSystemConfig = (newConfig: SystemConfig): Promise<void> => {
   });
 };
 
-// Filesystem
-const MOCK_FILE_SYSTEM: FileNode = {
+// Filesystem (REAL CALL)
+// Fallback structure in case API fails
+const MOCK_FILE_SYSTEM_FALLBACK: FileNode = {
   id: 'root',
   name: 'mnt',
   type: 'folder',
   path: '/mnt',
   children: [
     {
-      id: 'drive-1',
-      name: 'orange_drive_1tb',
+      id: 'fallback-drive',
+      name: 'Erro ao carregar disco',
       type: 'drive',
-      path: '/mnt/orange_drive_1tb',
-      size: '1TB',
-      children: [
-        {
-          id: 'folder-rec',
-          name: 'gravacoes',
-          type: 'folder',
-          path: '/mnt/orange_drive_1tb/gravacoes',
-          children: []
-        },
-        { id: 'sys-log', name: 'sistema.log', type: 'file', path: '/mnt/orange_drive_1tb/sistema.log', size: '45KB' }
-      ]
-    },
-    {
-      id: 'drive-2',
-      name: 'usb_backup',
-      type: 'drive',
-      path: '/mnt/usb_backup',
-      size: '64GB',
+      path: '/mnt',
       children: []
     }
   ]
 };
 
-export const fetchFileSystem = (): Promise<FileNode> => {
-   return new Promise((resolve) => {
-    setTimeout(() => resolve(JSON.parse(JSON.stringify(MOCK_FILE_SYSTEM))), 600);
-  }); 
+export const fetchFileSystem = async (): Promise<FileNode> => {
+    try {
+        const response = await fetch('/api/storage/tree');
+        if (!response.ok) throw new Error("Failed to fetch tree");
+        const tree = await response.json();
+        return tree;
+    } catch (e) {
+        console.warn("Could not fetch real file system, using fallback", e);
+        return MOCK_FILE_SYSTEM_FALLBACK;
+    }
 };
 
 // Other

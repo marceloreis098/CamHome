@@ -102,6 +102,59 @@ function identifyVendor(mac) {
     return MAC_VENDORS[prefix] || 'Genérico';
 }
 
+// Helper to scan directory recursively (limited depth)
+async function getDirRecursive(dirPath, currentDepth = 0, maxDepth = 2) {
+    if (currentDepth > maxDepth) return [];
+    
+    // Check if dir exists and is accessible
+    try {
+        await fs.promises.access(dirPath, fs.constants.R_OK);
+        const stats = await fs.promises.stat(dirPath);
+        if (!stats.isDirectory()) return [];
+    } catch (e) {
+        return [];
+    }
+
+    let children = [];
+    try {
+        const dirents = await fs.promises.readdir(dirPath, { withFileTypes: true });
+        
+        for (const dirent of dirents) {
+            const fullPath = path.join(dirPath, dirent.name);
+            let node = {
+                id: fullPath,
+                name: dirent.name,
+                path: fullPath,
+                type: 'file',
+                size: '-'
+            };
+
+            if (dirent.isDirectory()) {
+                node.type = 'folder';
+                // Heuristics for Drives/Mounts
+                if (currentDepth === 0 || dirent.name.includes('drive') || dirent.name.includes('disk') || dirent.name.includes('usb')) {
+                    node.type = 'drive';
+                }
+                
+                // Recursion
+                node.children = await getDirRecursive(fullPath, currentDepth + 1, maxDepth);
+                children.push(node);
+            } else {
+                // Get file size for files
+                try {
+                   const fStat = await fs.promises.stat(fullPath);
+                   node.size = (fStat.size / (1024 * 1024)).toFixed(2) + ' MB';
+                   children.push(node);
+                } catch(e) {}
+            }
+        }
+    } catch (e) {
+        console.warn(`[Storage] Failed to read dir ${dirPath}: ${e.message}`);
+    }
+    
+    return children;
+}
+
 // --- API ---
 
 // 1. Storage Format / Clean API
@@ -138,13 +191,61 @@ app.post('/api/storage/format', async (req, res) => {
     }
 });
 
-// 2. Network Scan API
+// 2. Real File System Tree API
+app.get('/api/storage/tree', async (req, res) => {
+    try {
+        // We scan common mount points on Linux/Ubuntu
+        // /mnt is standard for manual mounts
+        // /media is standard for auto-mounted USBs (Ubuntu desktop behavior)
+        
+        const mntChildren = await getDirRecursive('/mnt', 0, 3);
+        const mediaChildren = await getDirRecursive('/media', 0, 3);
+        
+        // Construct the root of our file explorer
+        const rootNode = {
+            id: 'root-system',
+            name: 'Armazenamento do Servidor',
+            type: 'folder',
+            path: '/',
+            children: [
+                {
+                    id: '/mnt',
+                    name: 'mnt (Montagens)',
+                    type: 'folder',
+                    path: '/mnt',
+                    children: mntChildren
+                },
+                {
+                    id: '/media',
+                    name: 'media (USB/Removível)',
+                    type: 'folder',
+                    path: '/media',
+                    children: mediaChildren
+                }
+            ]
+        };
+
+        res.json(rootNode);
+    } catch (e) {
+        console.error("[Storage] Tree Error:", e);
+        res.status(500).json({ 
+            error: "Falha ao ler sistema de arquivos.",
+            fallback: true
+        });
+    }
+});
+
+// 3. Network Scan API
 app.get('/api/scan', (req, res) => {
     const subnet = getLocalNetwork();
-    console.log(`[Scanner] Iniciando scan profundo em: ${subnet}`);
+    console.log(`[Scanner] Iniciando scan (SUDO) em: ${subnet}`);
 
-    const ports = "554,80,81,88,443,1935,5000,5554,6688,8000,8001,8080,8081,8090,8899,10080,34567,37777";
-    const command = `nmap -p ${ports} --open -oG - -T4 ${subnet}`;
+    // User requested explicit scan on ports 80 and 554
+    const ports = "80,554";
+    
+    // Using sudo as requested. 
+    // -oG - ensures we can parse the output easily in the code below.
+    const command = `sudo nmap -p ${ports} --open -oG - -T4 ${subnet}`;
 
     exec(command, (error, stdout, stderr) => {
         if (error) {
@@ -152,7 +253,8 @@ app.get('/api/scan', (req, res) => {
             if (error.message.includes('not found')) {
                 return res.status(500).json({ error: "Nmap não instalado. Execute: sudo apt install nmap" });
             }
-            return res.status(500).json({ error: "Falha ao executar scan." });
+            // Sudo errors might appear here if no-password sudo isn't configured
+            return res.status(500).json({ error: "Falha ao executar scan. Verifique permissões de sudo ou instalação do Nmap." });
         }
 
         const arpTable = getArpTable();
