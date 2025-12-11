@@ -1,11 +1,10 @@
-
 {
   "name": "camhome-surveillance",
   "version": "1.0.0",
   "description": "Dashboard de vigilancia Orange Pi - CamHome",
   "scripts": {
     "dev": "parcel index.html",
-    "build": "parcel build index.html --dist-dir dist --public-url ./",
+    "build": "rm -rf dist .parcel-cache && parcel build index.html --dist-dir dist --public-url /",
     "start": "node server.js"
   },
   "dependencies": {
