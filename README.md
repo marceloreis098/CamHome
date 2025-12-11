@@ -47,7 +47,15 @@ Agora que o arquivo está corrigido, inicie a instalação automática.
 sudo ./install.sh
 ```
 
-*Aguarde a mensagem "Instalação Concluída com Sucesso!".*
+### 4. Acessando o Painel
+Ao final da instalação, o script mostrará o IP de acesso.
+
+1. Abra o navegador no seu computador ou celular (conectado na mesma rede).
+2. Digite o endereço IP mostrado (Exemplo: `http://192.168.1.X`).
+   - Se você esqueceu o IP, rode o comando: `hostname -I` no terminal do Orange Pi.
+3. **Login Padrão:**
+   - **Usuário:** `admin`
+   - **Senha:** `password`
 
 ---
 
