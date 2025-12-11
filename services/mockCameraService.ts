@@ -161,19 +161,29 @@ export const updateCamera = (updatedCamera: Camera): Promise<void> => {
 // Network Scan (REAL API CALL)
 export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
   try {
-    // Calls the Node.js backend to perform the Nmap scan
     const response = await fetch('/api/scan');
+    const responseText = await response.text(); // Read text first to prevent JSON parse crashes
     
-    if (!response.ok) {
-        let errMsg = `Server returned ${response.status}`;
-        try {
-            const errBody = await response.json();
-            if (errBody.error) errMsg = errBody.error;
-        } catch(e) {}
-        throw new Error(errMsg);
+    // 1. Check if response is HTML (Common Nginx/Proxy Error)
+    if (responseText.trim().startsWith('<')) {
+         console.error("Recebido HTML da API Scan:", responseText.substring(0, 100));
+         throw new Error("Erro de Conexão: O Frontend recebeu uma página HTML em vez de dados. Verifique se o Backend (Node.js) está rodando e se o Nginx está configurado corretamente.");
     }
 
-    const foundDevices: DiscoveredDevice[] = await response.json();
+    // 2. Try parse JSON
+    let data;
+    try {
+        data = JSON.parse(responseText);
+    } catch (e) {
+        throw new Error(`Resposta inválida do servidor: ${responseText.substring(0, 50)}...`);
+    }
+
+    // 3. Check Protocol Errors
+    if (!response.ok) {
+        throw new Error(data.error || `Erro do Servidor: ${response.status}`);
+    }
+
+    const foundDevices: DiscoveredDevice[] = data;
     const existingIps = getStoredCameras().map(c => c.ip);
 
     // Mark devices that are already added to the dashboard
@@ -183,7 +193,7 @@ export const scanNetworkForDevices = async (): Promise<DiscoveredDevice[]> => {
     }));
 
   } catch (error) {
-    console.error("Network scan error. Ensure server is running.", error);
+    console.error("Network scan error.", error);
     throw error;
   }
 };
@@ -213,9 +223,19 @@ export const formatStorage = async (path: string): Promise<void> => {
             body: JSON.stringify({ path })
         });
 
+        const responseText = await res.text();
+        
+        if (responseText.trim().startsWith('<')) {
+             throw new Error("Erro: Backend não acessível (HTML recebido).");
+        }
+
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch(e) { throw new Error("Resposta inválida ao formatar."); }
+
         if (!res.ok) {
-             const errorData = await res.json();
-             throw new Error(errorData.error || "Erro desconhecido ao formatar");
+             throw new Error(data.error || "Erro desconhecido ao formatar");
         }
 
         // Reset local usage stats for UI
@@ -259,7 +279,7 @@ const MOCK_FILE_SYSTEM_FALLBACK: FileNode = {
   children: [
     {
       id: 'fallback-drive',
-      name: 'Erro ao carregar disco',
+      name: 'Erro de Conexão',
       type: 'drive',
       path: '/mnt',
       children: []
@@ -270,8 +290,15 @@ const MOCK_FILE_SYSTEM_FALLBACK: FileNode = {
 export const fetchFileSystem = async (): Promise<FileNode> => {
     try {
         const response = await fetch('/api/storage/tree');
+        const responseText = await response.text();
+
+        if (responseText.trim().startsWith('<')) {
+             console.warn("FS Tree recebeu HTML. Backend offline ou Proxy erro.");
+             return MOCK_FILE_SYSTEM_FALLBACK;
+        }
+
+        const tree = JSON.parse(responseText);
         if (!response.ok) throw new Error("Failed to fetch tree");
-        const tree = await response.json();
         return tree;
     } catch (e) {
         console.warn("Could not fetch real file system, using fallback", e);

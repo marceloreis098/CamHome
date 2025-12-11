@@ -243,9 +243,7 @@ app.get('/api/scan', (req, res) => {
 
     const ports = "80,554";
     
-    // REMOVE SUDO from here. 
-    // Running sudo inside exec() causes it to hang waiting for password if not configured.
-    // The user should run "sudo node server.js" instead.
+    // We try 'nmap', if not found, usually it's in /usr/bin/nmap
     const command = `nmap -p ${ports} --open -oG - -T4 ${subnet}`;
 
     exec(command, (error, stdout, stderr) => {

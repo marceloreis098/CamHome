@@ -62,13 +62,15 @@ cd CamHome
 # 3. Instalar dependências
 npm install
 
-# 4. Compilar o projeto
+# 4. Compilar o projeto (Frontend)
 npm run build
 ```
 
 **Se o build funcionar, você verá: `✨ Built in X.XXs` e uma pasta `dist` será criada.**
 
-### Passo 4: Configurar o Servidor Web (Nginx)
+### Passo 4: Configurar o Servidor Web (Nginx com Proxy API)
+
+Isso permite que você acesse pelo IP na porta 80, enquanto o Nginx repassa as chamadas de sistema para o Node na porta 3000.
 
 ```bash
 # 1. Instalar Nginx
@@ -83,14 +85,14 @@ sudo chown -R www-data:www-data /var/www/camhome
 sudo chmod -R 755 /var/www/camhome
 ```
 
-### Passo 5: Ativar o Site
+### Passo 5: Ativar o Site e Proxy
 
 1. Edite o arquivo de configuração:
 ```bash
 sudo nano /etc/nginx/sites-available/camhome
 ```
 
-2. Cole o conteúdo abaixo:
+2. Cole o conteúdo abaixo **(ATENÇÃO: Este bloco foi atualizado para corrigir o erro da API):**
 ```nginx
 server {
     listen 80;
@@ -99,8 +101,19 @@ server {
     root /var/www/camhome;
     index index.html;
 
+    # Serve a Aplicação React (Frontend)
     location / {
         try_files $uri $uri/ /index.html;
+    }
+
+    # Redireciona chamadas de API para o Backend Node.js
+    location /api/ {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
     }
 }
 ```
@@ -111,6 +124,31 @@ server {
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo ln -s /etc/nginx/sites-available/camhome /etc/nginx/sites-enabled/
 sudo systemctl restart nginx
+```
+
+### Passo 6: Rodar o Backend (Servidor Node)
+
+Para que o Nmap funcione corretamente e escaneie a rede, o backend precisa estar rodando.
+
+**Opção A: Rodar manualmente (para teste)**
+```bash
+sudo node server.js
+# Mantenha o terminal aberto
+```
+
+**Opção B: Rodar em segundo plano (Definitivo - Recomendado)**
+Use o PM2 para garantir que o servidor reinicie se cair ou se o Orange Pi reiniciar.
+
+```bash
+# 1. Instalar PM2 globalmente
+sudo npm install -g pm2
+
+# 2. Iniciar o servidor
+sudo pm2 start server.js --name "camhome-backend"
+
+# 3. Configurar para iniciar no boot
+sudo pm2 startup
+sudo pm2 save
 ```
 
 ---
@@ -127,18 +165,12 @@ sudo systemctl restart nginx
 
 ## 🆘 Solução de Erros
 
-**Erro: `-bash: npm: command not found`**
-- **Causa:** O comando `sudo apt install -y nodejs` não foi executado após o script do curl.
-- **Solução:** Rode `sudo apt install -y nodejs` e verifique novamente.
+**Erro: `Unexpected token '<'` ao escanear**
+- **Causa:** O Nginx não está configurado corretamente para repassar `/api/` para o Node.js.
+- **Solução:** Refaça o passo 5 copiando o código Nginx atualizado.
 
-**Erro: `sh: 1: parcel: not found` durante o build**
-- **Causa:** O `npm install` não rodou ou falhou.
-- **Solução:**
-  ```bash
-  rm -rf node_modules
-  npm install
-  npm run build
-  ```
+**Erro: `Nmap not found`**
+- **Solução:** `sudo apt install nmap`
 
 ---
 **Desenvolvido por Marcelo Reis**
