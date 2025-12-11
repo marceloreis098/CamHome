@@ -55,13 +55,36 @@ const CAMERA_PRESETS = [
       stream: 'rtsp://[IP]:554/cam/realmonitor?channel=1&subtype=0'
     },
     
-    // MICROSEVEN (M7) - NEW
+    // MICROSEVEN (M7)
     { 
       label: 'Microseven (M7 Series)', 
       value: 'microseven', 
       keywords: ['microseven'],
       url: 'http://[IP]/jpgimage/1/image.jpg',
       stream: 'rtsp://[IP]:554/11'
+    },
+
+    // YOOSEE / MIBO / GWELLTIMES Family
+    { 
+      label: 'Yoosee / Mibo (Padrão - CGI)', 
+      value: 'yoosee_std', 
+      keywords: ['yoosee', 'mibo', 'gwell'],
+      url: 'http://[IP]/snapshot.cgi',
+      stream: 'rtsp://[IP]:554/onvif1'
+    },
+    { 
+      label: 'Yoosee (Variante - snap.jpg)', 
+      value: 'yoosee_jpg', 
+      keywords: ['yoosee'],
+      url: 'http://[IP]/snap.jpg',
+      stream: 'rtsp://[IP]:554/onvif1'
+    },
+    { 
+      label: 'Yoosee / CMS (Antigo - Porta 5000)', 
+      value: 'yoosee_5000', 
+      keywords: ['yoosee_old'],
+      url: 'http://[IP]:5000/snapshot',
+      stream: 'rtsp://[IP]:554/onvif1'
     },
 
     // GENERIC / CHINA CAMS
@@ -77,13 +100,6 @@ const CAMERA_PRESETS = [
       value: 'onvif_80', 
       keywords: ['onvif'],
       url: 'http://[IP]/onvif/snapshot',
-      stream: 'rtsp://[IP]:554/onvif1'
-    },
-    { 
-      label: 'Yoosee / CMS (Porta 5000)', 
-      value: 'yoosee', 
-      keywords: ['yoosee', 'gwelltimes'],
-      url: 'http://[IP]:5000/snapshot',
       stream: 'rtsp://[IP]:554/onvif1'
     },
     { 
