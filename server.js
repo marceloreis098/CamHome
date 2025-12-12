@@ -17,9 +17,69 @@ app.use((req, res, next) => {
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'dist')));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Increased limit for potential image data
 
-// --- HELPERS ---
+// --- DATA PERSISTENCE LAYER (JSON FILES) ---
+const DATA_DIR = path.join(__dirname, 'data');
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR);
+}
+
+// Helper to handle JSON files
+const jsonDb = {
+    read: (filename, defaultValue) => {
+        const filePath = path.join(DATA_DIR, filename);
+        if (!fs.existsSync(filePath)) {
+            // Write default if not exists
+            fs.writeFileSync(filePath, JSON.stringify(defaultValue, null, 2));
+            return defaultValue;
+        }
+        try {
+            const data = fs.readFileSync(filePath, 'utf8');
+            return JSON.parse(data);
+        } catch (e) {
+            console.error(`Error reading ${filename}:`, e);
+            return defaultValue;
+        }
+    },
+    write: (filename, data) => {
+        const filePath = path.join(DATA_DIR, filename);
+        try {
+            fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+            return true;
+        } catch (e) {
+            console.error(`Error writing ${filename}:`, e);
+            return false;
+        }
+    }
+};
+
+// Initial Data Defaults
+const DEFAULTS = {
+    users: [{
+        id: 'u1',
+        username: 'admin',
+        password: 'password', // In production, hash this!
+        name: 'Administrador',
+        role: 'ADMIN',
+        createdAt: new Date()
+    }],
+    config: {
+        appName: 'CamHome',
+        enableAuth: true,
+        enableMfa: false,
+        ddnsProvider: 'noip',
+        ddnsHostname: '',
+        recordingPath: '/mnt/orange_drive_1tb/gravacoes',
+        minAlertLevel: 'INFO',
+        enableSound: true
+    },
+    cameras: []
+};
+
+// --- HELPERS (Network & Hardware) ---
 
 const MAC_VENDORS = {
     'e0:50:8b': 'Hikvision',
@@ -45,7 +105,6 @@ const MAC_VENDORS = {
     '00:fc:04': 'Microseven'
 };
 
-// Calculates CIDR suffix (e.g. 24 for 255.255.255.0)
 function getCidrSuffix(netmask) {
     if (!netmask) return 24;
     return netmask.split('.').map(Number)
@@ -54,7 +113,6 @@ function getCidrSuffix(netmask) {
       .split('1').length - 1;
 }
 
-// Calculates correct network base address (e.g. 192.168.1.100 & 255.255.255.192 -> 192.168.1.64)
 function calculateSubnet(ip, netmask) {
     const ipParts = ip.split('.').map(Number);
     const maskParts = netmask.split('.').map(Number);
@@ -70,13 +128,11 @@ function getLocalNetwork() {
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
             if (iface.family === 'IPv4' && !iface.internal) {
-                // If we have a netmask, calculate properly
                 if (iface.netmask) {
                     const calculated = calculateSubnet(iface.address, iface.netmask);
                     if (iface.address.startsWith('192.168')) return calculated;
                     if (!bestCandidate) bestCandidate = calculated;
                 } else if (iface.cidr) {
-                     // Fallback to CIDR if provided directly by Node (rarely contains correct base for subnets)
                      bestCandidate = iface.cidr; 
                 }
             }
@@ -152,27 +208,67 @@ async function getDirRecursive(dirPath, currentDepth = 0, maxDepth = 2) {
 
 // --- API ROUTES ---
 
-// 1. IMAGE PROXY (NEW) - Fixes "Broken Image" on frontend
+// --- DATA PERSISTENCE ROUTES (NEW) ---
+
+// Cameras
+app.get('/api/cameras', (req, res) => {
+    const data = jsonDb.read('cameras.json', DEFAULTS.cameras);
+    res.json(data);
+});
+
+app.post('/api/cameras', (req, res) => {
+    // Expects the full list of cameras to overwrite
+    const success = jsonDb.write('cameras.json', req.body);
+    if (success) res.json({ success: true });
+    else res.status(500).json({ error: 'Failed to save cameras' });
+});
+
+// Users
+app.get('/api/users', (req, res) => {
+    const data = jsonDb.read('users.json', DEFAULTS.users);
+    res.json(data);
+});
+
+app.post('/api/users', (req, res) => {
+    const success = jsonDb.write('users.json', req.body);
+    if (success) res.json({ success: true });
+    else res.status(500).json({ error: 'Failed to save users' });
+});
+
+// Config
+app.get('/api/config', (req, res) => {
+    const data = jsonDb.read('config.json', DEFAULTS.config);
+    res.json(data);
+});
+
+app.post('/api/config', (req, res) => {
+    const current = jsonDb.read('config.json', DEFAULTS.config);
+    const updated = { ...current, ...req.body };
+    const success = jsonDb.write('config.json', updated);
+    if (success) res.json({ success: true });
+    else res.status(500).json({ error: 'Failed to save config' });
+});
+
+
+// --- FUNCTIONAL ROUTES ---
+
+// 1. IMAGE PROXY
 app.get('/api/proxy', async (req, res) => {
     const { url, username, password } = req.query;
     if (!url) return res.status(400).send('URL missing');
 
     try {
-        // Construct Request Options
         const options = { 
             method: 'GET',
             headers: {},
-            // Set a timeout to prevent hanging connections
             signal: AbortSignal.timeout(5000) 
         };
 
-        // Handle Basic Auth manually to ensure headers are sent
         if (username && password) {
             const auth = Buffer.from(`${username}:${password}`).toString('base64');
             options.headers['Authorization'] = `Basic ${auth}`;
         }
 
-        // Fetch using Node 20 native fetch
         const response = await fetch(url, options);
 
         if (!response.ok) {
@@ -180,11 +276,9 @@ app.get('/api/proxy', async (req, res) => {
             return res.status(response.status).send(`Camera returned ${response.status}`);
         }
 
-        // Forward Content-Type (important for images)
         const contentType = response.headers.get('content-type');
         if (contentType) res.set('Content-Type', contentType);
 
-        // Pipe the image stream directly to the client
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
         res.send(buffer);
@@ -195,47 +289,33 @@ app.get('/api/proxy', async (req, res) => {
     }
 });
 
-// 1.5 RTSP SNAPSHOT (FFMPEG) - NEW
+// 1.5 RTSP SNAPSHOT
 app.get('/api/rtsp-snapshot', (req, res) => {
     let { url } = req.query;
     if (!url) return res.status(400).send('RTSP URL missing');
 
-    // Security check: simple validation
     if (!url.startsWith('rtsp://') && !url.startsWith('rtsps://')) {
         return res.status(400).send('Invalid protocol. Must be RTSP.');
     }
 
-    // FFmpeg arguments to capture a single frame
     const args = [
-        '-y',               // Overwrite output files
-        '-rtsp_transport', 'tcp', // Force TCP (more stable for IP cams than UDP)
-        '-i', url,          // Input URL
-        '-f', 'image2',     // Output format image
-        '-vframes', '1',    // Grab 1 frame
-        '-q:v', '5',        // Quality (2-31, lower is better, 5 is good balance)
-        '-'                 // Output to pipe (stdout)
+        '-y',               
+        '-rtsp_transport', 'tcp', 
+        '-i', url,          
+        '-f', 'image2',     
+        '-vframes', '1',    
+        '-q:v', '5',        
+        '-'                 
     ];
 
     const ffmpeg = spawn('ffmpeg', args);
 
-    // Pipe stdout (the image data) to the response
     res.contentType('image/jpeg');
     ffmpeg.stdout.pipe(res);
-
-    ffmpeg.stderr.on('data', (data) => {
-        // Uncomment to debug FFmpeg errors
-        // console.error(`FFmpeg Log: ${data}`); 
-    });
 
     ffmpeg.on('error', (err) => {
         console.error('Failed to start FFmpeg:', err);
         if (!res.headersSent) res.status(500).send('FFmpeg failed to start. Is it installed? (sudo apt install ffmpeg)');
-    });
-
-    ffmpeg.on('close', (code) => {
-        if (code !== 0) {
-            console.log(`FFmpeg process exited with code ${code} for URL ${url}`);
-        }
     });
 });
 

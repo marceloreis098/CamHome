@@ -1,49 +1,14 @@
 import { Camera, CameraStatus, StorageStats, RecordedMedia, FileNode, SystemConfig, AccessLog, SystemNotification, NotificationLevel, User, DiscoveredDevice } from '../types';
 
-const STORAGE_KEY_CAMERAS = 'camhome_cameras';
-const STORAGE_KEY_CONFIG = 'camhome_config';
-const STORAGE_KEY_USERS = 'camhome_users';
-
-// --- MOCK DATA ---
-
-const DEFAULT_ADMIN: User = {
-    id: 'u1',
-    username: 'admin',
-    password: 'password',
-    name: 'Administrador',
-    role: 'ADMIN',
-    createdAt: new Date()
-};
-
-const DEFAULT_USERS: User[] = [
-  DEFAULT_ADMIN,
-  {
-    id: 'u2',
-    username: 'visitante',
-    password: '123',
-    name: 'Membro da Família',
-    role: 'USER',
-    createdAt: new Date()
-  }
-];
-
-const DEFAULT_CAMERAS: Camera[] = []; // Start empty to force setup usage
+// --- CONSTANTS ---
+// We no longer use localStorage keys. The source of truth is the backend API.
 
 const DEFAULT_RECORDINGS: RecordedMedia[] = [];
 
-let INITIAL_CONFIG: SystemConfig = {
-  appName: 'CamHome',
-  enableAuth: true,
-  enableMfa: false,
-  ddnsProvider: 'noip',
-  ddnsHostname: 'minha-camera.ddns.net',
-  recordingPath: '/mnt/orange_drive_1tb/gravacoes',
-  minAlertLevel: NotificationLevel.INFO,
-  enableSound: true
-};
-
+// Initial defaults are now handled by the Backend if files are missing, 
+// but we keep a structural fallback here for typesafety before load.
 let INITIAL_STORAGE: StorageStats = {
-  total: 1000, // 1TB
+  total: 1000,
   used: 450,
   path: '/mnt/orange_drive_1tb',
   label: 'Orange Drive 1TB',
@@ -52,15 +17,18 @@ let INITIAL_STORAGE: StorageStats = {
 
 // --- HELPERS ---
 
-// SMART FETCH: The core fix for "HTML response" errors.
-// It tries the relative path first. If it gets HTML (Nginx 404/Fallback) or fails,
-// it falls back to direct port 3000 connection.
+// SMART FETCH: Handles relative paths vs dev environment + fallback to port 3000
 const smartFetch = async (endpoint: string, options: RequestInit = {}) => {
     // 1. Determine Primary URL
     const isDev = process.env.NODE_ENV === 'development' || window.location.port === '1234';
-    let primaryUrl = endpoint; // Default relative for Production
+    let primaryUrl = endpoint; 
     if (isDev) {
          primaryUrl = `http://${window.location.hostname}:3000${endpoint}`;
+    }
+
+    // Ensure content-type json if body is present and not specified
+    if (options.body && !options.headers) {
+        options.headers = { 'Content-Type': 'application/json' };
     }
 
     let response;
@@ -71,24 +39,18 @@ const smartFetch = async (endpoint: string, options: RequestInit = {}) => {
         text = await response.text();
     } catch (e) {
         console.warn(`[SmartFetch] Falha na conexão principal (${primaryUrl}). Tentando fallback...`);
-        // If primary fails (Network Error), force null to trigger fallback logic below
         response = null;
         text = null; 
     }
 
-    // 2. Check for success. If we got HTML (starting with <) or no response, try Fallback.
+    // 2. Fallback Logic
     if (!response || !response.ok || (text && text.trim().startsWith('<'))) {
         const currentPort = window.location.port;
-        // Only try fallback if we are NOT already on port 3000 (to avoid infinite loops)
         if (currentPort !== '3000') {
             const fallbackUrl = `http://${window.location.hostname}:3000${endpoint}`;
-            console.log(`[SmartFetch] Ativando Fallback para: ${fallbackUrl}`);
-            
             try {
                 const resFallback = await fetch(fallbackUrl, options);
                 const textFallback = await resFallback.text();
-                
-                // If fallback is good (JSON), return it
                 if (resFallback.ok && !textFallback.trim().startsWith('<')) {
                     return JSON.parse(textFallback);
                 }
@@ -98,9 +60,8 @@ const smartFetch = async (endpoint: string, options: RequestInit = {}) => {
         }
     }
 
-    // 3. Process the original response if fallback wasn't needed or failed
     if (text && text.trim().startsWith('<')) {
-         throw new Error("Erro de Configuração: O Backend retornou uma página Web (HTML) em vez de dados. Verifique se o server.js está rodando na porta 3000.");
+         throw new Error("Erro de Configuração: O Backend retornou HTML. Verifique o servidor.");
     }
     
     if (!response || !response.ok) {
@@ -111,170 +72,156 @@ const smartFetch = async (endpoint: string, options: RequestInit = {}) => {
         throw new Error(errMsg || `Erro HTTP: ${response?.status}`);
     }
 
-    return JSON.parse(text);
-};
-
-
-const getStoredCameras = (): Camera[] => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_CAMERAS);
-    return stored ? JSON.parse(stored) : DEFAULT_CAMERAS;
-  } catch (e) { return DEFAULT_CAMERAS; }
-};
-
-const saveStoredCameras = (cameras: Camera[]) => {
-  localStorage.setItem(STORAGE_KEY_CAMERAS, JSON.stringify(cameras));
-};
-
-const getStoredUsers = (): User[] => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_USERS);
-    let users = stored ? JSON.parse(stored) : DEFAULT_USERS;
-    
-    // SAFETY CHECK: Ensure Admin always exists and has ADMIN role
-    const adminIdx = users.findIndex((u: User) => u.username === 'admin');
-    if (adminIdx === -1) {
-        users.unshift(DEFAULT_ADMIN);
-    } else {
-        // Force admin role just in case it was corrupted
-        users[adminIdx].role = 'ADMIN';
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        return text; // Return text if not JSON
     }
-    return users;
-  } catch (e) { return DEFAULT_USERS; }
 };
 
-const saveStoredUsers = (users: User[]) => {
-  localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
+// --- SERVICES (NOW CONNECTED TO BACKEND) ---
+
+// USERS
+export const fetchUsers = async (): Promise<User[]> => {
+  try {
+      return await smartFetch('/api/users');
+  } catch (e) {
+      console.error("Error fetching users:", e);
+      return [];
+  }
 };
 
-// --- SERVICES ---
-
-// Users & Auth
-export const fetchUsers = (): Promise<User[]> => {
-  return new Promise(resolve => setTimeout(() => resolve(getStoredUsers()), 300));
-};
-
-export const saveUser = (user: User): Promise<void> => {
-  return new Promise(resolve => {
-    const users = getStoredUsers();
+export const saveUser = async (user: User): Promise<void> => {
+    const users = await fetchUsers();
     const idx = users.findIndex(u => u.id === user.id);
-    if (idx >= 0) {
-      users[idx] = user;
-    } else {
-      users.push(user);
-    }
-    saveStoredUsers(users);
-    setTimeout(resolve, 400);
-  });
+    if (idx >= 0) users[idx] = user;
+    else users.push(user);
+    
+    await smartFetch('/api/users', {
+        method: 'POST',
+        body: JSON.stringify(users)
+    });
 };
 
-export const deleteUser = (id: string): Promise<void> => {
-  return new Promise(resolve => {
-    const users = getStoredUsers().filter(u => u.id !== id);
-    saveStoredUsers(users);
-    setTimeout(resolve, 400);
-  });
+export const deleteUser = async (id: string): Promise<void> => {
+    let users = await fetchUsers();
+    users = users.filter(u => u.id !== id);
+    await smartFetch('/api/users', {
+        method: 'POST',
+        body: JSON.stringify(users)
+    });
 };
 
-export const authenticateUser = (username: string, password: string): Promise<User | null> => {
-  return new Promise(resolve => {
-    const users = getStoredUsers();
+export const authenticateUser = async (username: string, password: string): Promise<User | null> => {
+    const users = await fetchUsers();
     const user = users.find(u => u.username === username && u.password === password);
-    resolve(user || null);
-  });
+    return user || null;
 };
 
-
-// Cameras
-export const fetchCameras = (): Promise<Camera[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(getStoredCameras()), 500);
-  });
+// CAMERAS
+export const fetchCameras = async (): Promise<Camera[]> => {
+    try {
+        return await smartFetch('/api/cameras');
+    } catch (e) {
+        console.error("Error fetching cameras:", e);
+        return [];
+    }
 };
 
-export const addCamera = (newCam: Camera): Promise<void> => {
-  return new Promise((resolve) => {
-    const cameras = getStoredCameras();
+export const addCamera = async (newCam: Camera): Promise<void> => {
+    const cameras = await fetchCameras();
     cameras.push(newCam);
-    saveStoredCameras(cameras);
-    setTimeout(resolve, 500);
-  });
+    await smartFetch('/api/cameras', {
+        method: 'POST',
+        body: JSON.stringify(cameras)
+    });
 };
 
-export const deleteCamera = (id: string): Promise<void> => {
-  return new Promise((resolve) => {
-    const cameras = getStoredCameras().filter(c => c.id !== id);
-    saveStoredCameras(cameras);
-    setTimeout(resolve, 500);
-  });
+export const deleteCamera = async (id: string): Promise<void> => {
+    let cameras = await fetchCameras();
+    cameras = cameras.filter(c => c.id !== id);
+    await smartFetch('/api/cameras', {
+        method: 'POST',
+        body: JSON.stringify(cameras)
+    });
 };
 
-export const updateCamera = (updatedCamera: Camera): Promise<void> => {
-  return new Promise((resolve) => {
-    const cameras = getStoredCameras();
+export const updateCamera = async (updatedCamera: Camera): Promise<void> => {
+    const cameras = await fetchCameras();
     const index = cameras.findIndex(c => c.id === updatedCamera.id);
     if (index !== -1) {
       cameras[index] = updatedCamera;
-      saveStoredCameras(cameras);
+      await smartFetch('/api/cameras', {
+          method: 'POST',
+          body: JSON.stringify(cameras)
+      });
     }
-    setTimeout(resolve, 500);
-  });
 };
 
-// Network Scan (REAL API CALL)
+// CONFIG
+export const fetchSystemConfig = async (): Promise<SystemConfig> => {
+    try {
+        return await smartFetch('/api/config');
+    } catch (e) {
+        console.error("Error fetching config:", e);
+        return { // Fallback if server fails
+            appName: 'CamHome',
+            enableAuth: true,
+            enableMfa: false,
+            recordingPath: '/mnt',
+            minAlertLevel: NotificationLevel.INFO,
+            enableSound: true
+        };
+    }
+};
+
+export const updateSystemConfig = async (newConfig: SystemConfig): Promise<void> => {
+    await smartFetch('/api/config', {
+        method: 'POST',
+        body: JSON.stringify(newConfig)
+    });
+};
+
+// NETWORK SCAN (Existing Real API)
 export const scanNetworkForDevices = async (manualSubnet?: string): Promise<DiscoveredDevice[]> => {
   try {
-    // Construct Query
     const query = manualSubnet ? `?subnet=${encodeURIComponent(manualSubnet)}` : '';
-    
-    // Use smartFetch to handle connection issues automatically
     const data = await smartFetch(`/api/scan${query}`, {
         headers: { 'Accept': 'application/json' }
     });
     
-    // Safety check if response is not array
     if (!Array.isArray(data)) throw new Error("Formato de resposta inválido");
 
     const foundDevices: DiscoveredDevice[] = data;
-    const existingIps = getStoredCameras().map(c => c.ip);
+    
+    // We need to fetch current cameras to mark "isAdded"
+    const cameras = await fetchCameras();
+    const existingIps = cameras.map(c => c.ip);
 
-    // Mark devices that are already added to the dashboard
     return foundDevices.map(d => ({
       ...d,
       isAdded: existingIps.includes(d.ip)
     }));
 
   } catch (error) {
-    console.warn("Backend indisponível ou erro no scan. Usando Mock Data.", error);
-    
-    // FALLBACK: Retorna dados simulados para não travar a UI se o servidor estiver off
-    const mockDevices: DiscoveredDevice[] = [
-        { ip: '192.168.1.200', mac: '00:00:00:00:00:00', manufacturer: 'Backend Offline (Mock)', model: 'Server Not Running', isAdded: false }
-    ];
-    
-    const existingIps = getStoredCameras().map(c => c.ip);
-    return mockDevices.map(d => ({
-      ...d,
-      isAdded: existingIps.includes(d.ip)
-    }));
+    console.warn("Backend indisponível ou erro no scan.", error);
+    return [];
   }
 };
 
-// Recordings (Mock)
+// RECORDINGS (Mock for now, typically would come from reading the disk via API)
 export const fetchRecordings = (): Promise<RecordedMedia[]> => {
   return new Promise((resolve) => {
     setTimeout(() => resolve(DEFAULT_RECORDINGS), 600);
   });
 };
 
-// Storage
-export const fetchStorageStats = (): Promise<StorageStats> => {
-  return new Promise((resolve) => {
-    const config = getStoredConfigSync();
-    // Simulate updating path based on config
-    const stats = { ...INITIAL_STORAGE, path: config.recordingPath.split('/gravacoes')[0] };
-    setTimeout(() => resolve(stats), 500);
-  });
+// STORAGE (Uses config to determine path to check)
+export const fetchStorageStats = async (): Promise<StorageStats> => {
+  const config = await fetchSystemConfig();
+  // In a real scenario, we'd have a backend endpoint /api/storage/stats checking the actual path
+  // For now, we simulate using the config path
+  return { ...INITIAL_STORAGE, path: config.recordingPath.split('/gravacoes')[0] };
 };
 
 export const formatStorage = async (path: string): Promise<void> => {
@@ -284,39 +231,14 @@ export const formatStorage = async (path: string): Promise<void> => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path })
         });
-        
-        // Reset local usage stats for UI
         INITIAL_STORAGE.used = 0; 
     } catch (e) {
         console.error("Erro na formatação:", e);
-        throw e; // Propagate to UI
+        throw e;
     }
 };
 
-// Config
-const getStoredConfigSync = (): SystemConfig => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_CONFIG);
-    return stored ? JSON.parse(stored) : INITIAL_CONFIG;
-  } catch (e) { return INITIAL_CONFIG; }
-};
-
-export const fetchSystemConfig = (): Promise<SystemConfig> => {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(getStoredConfigSync()), 400);
-  });
-};
-
-export const updateSystemConfig = (newConfig: SystemConfig): Promise<void> => {
-  return new Promise((resolve) => {
-    INITIAL_CONFIG = newConfig;
-    localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(newConfig));
-    setTimeout(resolve, 800);
-  });
-};
-
-// Filesystem (REAL CALL)
-// Fallback structure in case API fails
+// FILESYSTEM (Real API)
 const MOCK_FILE_SYSTEM_FALLBACK: FileNode = {
   id: 'root',
   name: 'mnt',
@@ -343,7 +265,7 @@ export const fetchFileSystem = async (): Promise<FileNode> => {
     }
 };
 
-// Other
+// MOCK HELPERS (Logs, Notifications)
 export const fetchAccessLogs = (): Promise<AccessLog[]> => {
   return new Promise((resolve) => resolve([]));
 };
