@@ -19,6 +19,12 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'dist')));
 app.use(express.json({ limit: '10mb' })); 
 
+// --- LOGGING SETUP ---
+const LOG_DIR = path.join(__dirname, 'logs');
+if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR);
+}
+
 // --- DATA PERSISTENCE LAYER (JSON FILES) ---
 const DATA_DIR = path.join(__dirname, 'data');
 
@@ -415,7 +421,19 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(PORT, () => {
+// START SERVER WITH ERROR HANDLING
+const server = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Local Network: ${getLocalNetwork()}`);
+});
+
+server.on('error', (e) => {
+    if (e.code === 'EADDRINUSE') {
+        console.error(`\n❌ ERRO FATAL: A porta ${PORT} já está em uso!`);
+        console.error(`Provavelmente você já tem um 'node server.js' rodando em outro terminal ou em background.`);
+        console.error(`Execute: sudo lsof -i :${PORT} para encontrar o processo e matá-lo.\n`);
+        process.exit(1);
+    } else {
+        console.error('Server Error:', e);
+    }
 });
