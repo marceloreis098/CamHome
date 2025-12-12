@@ -61,7 +61,7 @@ const smartFetch = async (endpoint: string, options: RequestInit = {}) => {
     }
 
     if (text && text.trim().startsWith('<')) {
-         throw new Error("Erro de Configuração: O Backend retornou HTML. Verifique o servidor.");
+         throw new Error("Erro de Configuração: O Backend retornou HTML. Verifique se o server.js está rodando (pm2 status).");
     }
     
     if (!response || !response.ok) {
@@ -184,6 +184,7 @@ export const updateSystemConfig = async (newConfig: SystemConfig): Promise<void>
 
 // NETWORK SCAN (Existing Real API)
 export const scanNetworkForDevices = async (manualSubnet?: string): Promise<DiscoveredDevice[]> => {
+  // Pass errors to UI so user knows what's wrong
   try {
     const query = manualSubnet ? `?subnet=${encodeURIComponent(manualSubnet)}` : '';
     const data = await smartFetch(`/api/scan${query}`, {
@@ -203,9 +204,9 @@ export const scanNetworkForDevices = async (manualSubnet?: string): Promise<Disc
       isAdded: existingIps.includes(d.ip)
     }));
 
-  } catch (error) {
-    console.warn("Backend indisponível ou erro no scan.", error);
-    return [];
+  } catch (error: any) {
+    console.warn("Erro no scan:", error);
+    throw error; // Let UI handle it
   }
 };
 

@@ -704,7 +704,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                  {!isScanning && scannedOnce && (
                      <div className="space-y-2">
                         {discoveredDevices.length === 0 ? (
-                            <p className="text-sm text-gray-500 text-center py-4">Nenhum dispositivo novo encontrado.</p>
+                            <div className="text-center py-4 bg-gray-900/50 rounded-lg border border-gray-700 border-dashed">
+                                <p className="text-sm text-gray-400 font-bold mb-1">Nenhum dispositivo novo encontrado.</p>
+                                <p className="text-xs text-gray-500 max-w-md mx-auto">
+                                    Certifique-se que o <b>Nmap</b> está instalado no servidor:<br/>
+                                    <code className="text-orange-400 bg-black/50 px-1 rounded">sudo apt install nmap</code>
+                                </p>
+                            </div>
                         ) : (
                             discoveredDevices.map((dev, idx) => (
                                 <div key={idx} className="bg-gray-900 p-3 rounded flex justify-between items-center border border-gray-700">

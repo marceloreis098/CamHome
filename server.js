@@ -17,22 +17,19 @@ app.use((req, res, next) => {
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'dist')));
-app.use(express.json({ limit: '10mb' })); // Increased limit for potential image data
+app.use(express.json({ limit: '10mb' })); 
 
 // --- DATA PERSISTENCE LAYER (JSON FILES) ---
 const DATA_DIR = path.join(__dirname, 'data');
 
-// Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR);
 }
 
-// Helper to handle JSON files
 const jsonDb = {
     read: (filename, defaultValue) => {
         const filePath = path.join(DATA_DIR, filename);
         if (!fs.existsSync(filePath)) {
-            // Write default if not exists
             fs.writeFileSync(filePath, JSON.stringify(defaultValue, null, 2));
             return defaultValue;
         }
@@ -56,12 +53,11 @@ const jsonDb = {
     }
 };
 
-// Initial Data Defaults
 const DEFAULTS = {
     users: [{
         id: 'u1',
         username: 'admin',
-        password: 'password', // In production, hash this!
+        password: 'password', 
         name: 'Administrador',
         role: 'ADMIN',
         createdAt: new Date()
@@ -123,22 +119,25 @@ function calculateSubnet(ip, netmask) {
 
 function getLocalNetwork() {
     const interfaces = os.networkInterfaces();
-    let bestCandidate = null;
+    let candidates = [];
 
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
             if (iface.family === 'IPv4' && !iface.internal) {
                 if (iface.netmask) {
-                    const calculated = calculateSubnet(iface.address, iface.netmask);
-                    if (iface.address.startsWith('192.168')) return calculated;
-                    if (!bestCandidate) bestCandidate = calculated;
-                } else if (iface.cidr) {
-                     bestCandidate = iface.cidr; 
+                    const cidr = calculateSubnet(iface.address, iface.netmask);
+                    candidates.push({ ip: iface.address, cidr, name });
                 }
             }
         }
     }
-    return bestCandidate || '192.168.0.0/24';
+    
+    // Prioritize standard LAN subnets over Docker/Virtual (172.x, etc)
+    const best = candidates.find(c => c.ip.startsWith('192.168')) || 
+                 candidates.find(c => c.ip.startsWith('10.')) ||
+                 candidates[0];
+
+    return best ? best.cidr : '192.168.0.0/24';
 }
 
 function getArpTable() {
@@ -161,7 +160,7 @@ function getArpTable() {
 }
 
 function identifyVendor(mac) {
-    if (!mac) return 'Desconhecido';
+    if (!mac || mac === '00:00:00:00:00:00') return 'Desconhecido';
     const prefix = mac.substring(0, 8).toLowerCase();
     return MAC_VENDORS[prefix] || 'Genérico';
 }
@@ -208,22 +207,17 @@ async function getDirRecursive(dirPath, currentDepth = 0, maxDepth = 2) {
 
 // --- API ROUTES ---
 
-// --- DATA PERSISTENCE ROUTES (NEW) ---
-
-// Cameras
 app.get('/api/cameras', (req, res) => {
     const data = jsonDb.read('cameras.json', DEFAULTS.cameras);
     res.json(data);
 });
 
 app.post('/api/cameras', (req, res) => {
-    // Expects the full list of cameras to overwrite
     const success = jsonDb.write('cameras.json', req.body);
     if (success) res.json({ success: true });
     else res.status(500).json({ error: 'Failed to save cameras' });
 });
 
-// Users
 app.get('/api/users', (req, res) => {
     const data = jsonDb.read('users.json', DEFAULTS.users);
     res.json(data);
@@ -235,7 +229,6 @@ app.post('/api/users', (req, res) => {
     else res.status(500).json({ error: 'Failed to save users' });
 });
 
-// Config
 app.get('/api/config', (req, res) => {
     const data = jsonDb.read('config.json', DEFAULTS.config);
     res.json(data);
@@ -249,10 +242,7 @@ app.post('/api/config', (req, res) => {
     else res.status(500).json({ error: 'Failed to save config' });
 });
 
-
-// --- FUNCTIONAL ROUTES ---
-
-// 1. IMAGE PROXY
+// PROXY & RTSP
 app.get('/api/proxy', async (req, res) => {
     const { url, username, password } = req.query;
     if (!url) return res.status(400).send('URL missing');
@@ -272,7 +262,6 @@ app.get('/api/proxy', async (req, res) => {
         const response = await fetch(url, options);
 
         if (!response.ok) {
-            console.error(`Proxy Fetch Failed: ${response.status} for ${url}`);
             return res.status(response.status).send(`Camera returned ${response.status}`);
         }
 
@@ -284,42 +273,25 @@ app.get('/api/proxy', async (req, res) => {
         res.send(buffer);
 
     } catch (e) {
-        console.error("Proxy Error:", e.message);
         res.status(502).send("Failed to reach camera: " + e.message);
     }
 });
 
-// 1.5 RTSP SNAPSHOT
 app.get('/api/rtsp-snapshot', (req, res) => {
     let { url } = req.query;
     if (!url) return res.status(400).send('RTSP URL missing');
 
-    if (!url.startsWith('rtsp://') && !url.startsWith('rtsps://')) {
-        return res.status(400).send('Invalid protocol. Must be RTSP.');
-    }
-
-    const args = [
-        '-y',               
-        '-rtsp_transport', 'tcp', 
-        '-i', url,          
-        '-f', 'image2',     
-        '-vframes', '1',    
-        '-q:v', '5',        
-        '-'                 
-    ];
-
+    const args = ['-y', '-rtsp_transport', 'tcp', '-i', url, '-f', 'image2', '-vframes', '1', '-q:v', '5', '-'];
     const ffmpeg = spawn('ffmpeg', args);
 
     res.contentType('image/jpeg');
     ffmpeg.stdout.pipe(res);
 
     ffmpeg.on('error', (err) => {
-        console.error('Failed to start FFmpeg:', err);
-        if (!res.headersSent) res.status(500).send('FFmpeg failed to start. Is it installed? (sudo apt install ffmpeg)');
+        if (!res.headersSent) res.status(500).send('FFmpeg failed.');
     });
 });
 
-// 2. Storage Format
 app.post('/api/storage/format', async (req, res) => {
     const { path: targetPath } = req.body;
     if (!targetPath) return res.status(400).json({ error: "Caminho não especificado." });
@@ -340,25 +312,16 @@ app.post('/api/storage/format', async (req, res) => {
     }
 });
 
-// 3. Storage Tree
 app.get('/api/storage/tree', async (req, res) => {
     try {
         const tree = await getDirRecursive('/mnt', 0, 2);
-        const root = {
-            id: 'root',
-            name: 'Montagens (mnt)',
-            type: 'folder',
-            path: '/mnt',
-            children: tree,
-            isOpen: true
-        };
-        res.json(root);
+        res.json({ id: 'root', name: 'Montagens (mnt)', type: 'folder', path: '/mnt', children: tree, isOpen: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
 
-// 4. Network Scan
+// NETWORK SCAN
 app.get('/api/scan', (req, res) => {
     let subnet = req.query.subnet;
     if (!subnet) subnet = getLocalNetwork();
@@ -366,9 +329,10 @@ app.get('/api/scan', (req, res) => {
     const arpTable = getArpTable();
     console.log(`[SCAN] Iniciando varredura na rede: ${subnet}`);
 
-    exec(`nmap -sn ${subnet}`, { timeout: 20000 }, (error, stdout, stderr) => {
+    // Increased maxBuffer to 1MB to prevent crashes on large outputs
+    exec(`nmap -sn ${subnet}`, { timeout: 25000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
         if (error) {
-            console.warn(`[SCAN] Nmap falhou ou demorou. Usando ARP. Erro: ${error.message}`);
+            console.warn(`[SCAN] Nmap falhou (Code: ${error.code}). Usando ARP. Msg: ${error.message}`);
             const devices = Object.keys(arpTable).map(ip => ({
                 ip,
                 mac: arpTable[ip],
@@ -386,10 +350,21 @@ app.get('/api/scan', (req, res) => {
 
         lines.forEach(line => {
             if (line.startsWith('Nmap scan report for')) {
+                // Save previous if exists (handle devices without MAC line)
+                if (currentIp) {
+                     devices.push({
+                        ip: currentIp,
+                        mac: '00:00:00:00:00:00',
+                        manufacturer: 'Desconhecido',
+                        model: currentName || 'Dispositivo de Rede',
+                        isAdded: false
+                    });
+                }
+                
                 const parts = line.split(' ');
-                const ipPart = parts[parts.length - 1];
-                currentIp = ipPart.replace('(', '').replace(')', '');
-                currentName = parts.length > 5 ? parts[parts.length - 2] : 'Unknown';
+                const ipPart = parts[parts.length - 1].replace('(', '').replace(')', '');
+                currentIp = ipPart;
+                currentName = parts.length > 5 ? parts.slice(4, parts.length - 1).join(' ') : 'Unknown';
             }
             else if (line.includes('MAC Address:') && currentIp) {
                 const parts = line.split('MAC Address: ');
@@ -408,6 +383,18 @@ app.get('/api/scan', (req, res) => {
             }
         });
 
+        // Add last item
+        if (currentIp) {
+             devices.push({
+                ip: currentIp,
+                mac: '00:00:00:00:00:00',
+                manufacturer: 'Desconhecido',
+                model: currentName || 'Dispositivo de Rede',
+                isAdded: false
+            });
+        }
+
+        // Merge with ARP to catch anything Nmap missed
         Object.keys(arpTable).forEach(ip => {
             if (!devices.find(d => d.ip === ip)) {
                 devices.push({
