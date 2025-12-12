@@ -173,13 +173,17 @@ const App: React.FC = () => {
     );
   }
 
-  // Show login screen if not authenticated
-  if (!isAuthenticated && config) {
+  // Show login screen if user is not authenticated AND EITHER:
+  // 1. The system config failed to load (config is null), we must assume auth is required.
+  // 2. The system config loaded and explicitly has authentication enabled.
+  const needsLogin = !isAuthenticated && (!config || config.enableAuth);
+
+  if (needsLogin) {
     return (
       <LoginScreen 
         onLogin={handleLogin} 
-        appName={config.appName} 
-        mfaEnabled={config.enableMfa}
+        appName={config?.appName || 'CamHome'} 
+        mfaEnabled={config?.enableMfa || false}
       />
     );
   }
@@ -218,7 +222,7 @@ const App: React.FC = () => {
                <div className="hidden md:flex flex-col items-end mr-2 bg-gray-800 px-3 py-1 rounded-full border border-gray-700">
                   <span className="text-xs font-bold text-white flex items-center gap-1">
                     <UserIcon className="w-3 h-3 text-gray-400"/>
-                    {currentUser?.username}
+                    {currentUser?.username || 'Visitante'}
                   </span>
                   <span className={`text-[10px] uppercase font-bold tracking-wider ${currentUser?.role === 'ADMIN' ? 'text-orange-400' : 'text-blue-400'}`}>
                     {currentUser?.role === 'ADMIN' ? 'Administrador' : 'Visitante'}
