@@ -26,6 +26,27 @@ const App: React.FC = () => {
   // Notification State
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
 
+  // Function to load critical data
+  const refreshData = async () => {
+      try {
+        const [cams, store, sysConfig] = await Promise.all([
+          fetchCameras(),
+          fetchStorageStats(),
+          fetchSystemConfig()
+        ]);
+        
+        // Only update if changes detected (simple length/id check to avoid flicker, 
+        // in a real app use deep comparison)
+        setCameras(prev => JSON.stringify(prev) !== JSON.stringify(cams) ? cams : prev);
+        setStorage(prev => JSON.stringify(prev) !== JSON.stringify(store) ? store : prev);
+        setConfig(prev => JSON.stringify(prev) !== JSON.stringify(sysConfig) ? sysConfig : prev);
+
+        return sysConfig;
+      } catch (error) {
+        console.error("Erro na sincronização:", error);
+      }
+  };
+
   useEffect(() => {
     // 1. Check for persisted session
     const sessionUser = sessionStorage.getItem('camhome_user');
@@ -45,36 +66,33 @@ const App: React.FC = () => {
         }
     }
 
-    const loadData = async () => {
-      try {
-        const [cams, store, sysConfig, notifs] = await Promise.all([
-          fetchCameras(),
-          fetchStorageStats(),
-          fetchSystemConfig(),
-          fetchNotifications()
-        ]);
-        setCameras(cams);
-        setStorage(store);
-        setConfig(sysConfig);
-        setNotifications(notifs);
-        
-        // Auto-login logic if auth is disabled in config
-        if (sysConfig && !sysConfig.enableAuth && !sessionStorage.getItem('camhome_user')) {
+    const initLoad = async () => {
+      const sysConfig = await refreshData();
+      const notifs = await fetchNotifications();
+      setNotifications(notifs);
+      
+      // Auto-login logic if auth is disabled in config
+      if (sysConfig && !sysConfig.enableAuth && !sessionStorage.getItem('camhome_user')) {
           const autoAdmin: User = { id: 'auto', username: 'admin', name: 'Admin (Auto)', role: 'ADMIN', password: '', createdAt: new Date() };
           setIsAuthenticated(true);
           setCurrentUser(autoAdmin);
           sessionStorage.setItem('camhome_user', JSON.stringify(autoAdmin));
-        }
-      } catch (error) {
-        console.error("Falha ao carregar dados do sistema", error);
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     };
-    loadData();
-  }, []);
 
-  // Polling for Notifications
+    initLoad();
+
+    // 2. Real-time Synchronization (Polling every 10s)
+    // This ensures if you add a camera on PC, it appears on Mobile automatically.
+    const syncInterval = setInterval(() => {
+        if(isAuthenticated) refreshData();
+    }, 10000);
+
+    return () => clearInterval(syncInterval);
+  }, [isAuthenticated]);
+
+  // Polling for Notifications (Faster)
   useEffect(() => {
     if (!isAuthenticated) return;
     const intervalId = setInterval(async () => {
@@ -143,7 +161,7 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-gray-900 flex items-center justify-center text-orange-500">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
-          <span className="font-mono text-sm tracking-wider">INICIALIZANDO...</span>
+          <span className="font-mono text-sm tracking-wider">CONECTANDO AO SERVIDOR...</span>
         </div>
       </div>
     );
