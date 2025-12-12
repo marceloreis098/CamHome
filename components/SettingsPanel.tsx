@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, CameraStatus, FileNode, SystemConfig, AccessLog, NotificationLevel, User, DiscoveredDevice } from '../types';
-import { fetchFileSystem, fetchSystemConfig, updateSystemConfig, fetchAccessLogs, fetchUsers, saveUser, deleteUser, scanNetworkForDevices, formatStorage } from '../services/mockCameraService';
+import { fetchFileSystem, fetchSystemConfig, updateSystemConfig, fetchAccessLogs, fetchUsers, saveUser, deleteUser, scanNetworkForDevices, formatStorage, checkBackendHealth } from '../services/mockCameraService';
 import { CogIcon, HddIcon, FolderIcon, FileIcon, GlobeIcon, LockIcon, UserIcon, SmartphoneIcon, SignalIcon, BellIcon, CameraIcon, CheckCircleIcon, ExclamationCircleIcon, SparklesIcon } from './Icons';
 
 interface SettingsPanelProps {
@@ -154,6 +154,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
   const [scanRange, setScanRange] = useState('');
   const [discoveredDevices, setDiscoveredDevices] = useState<ExtendedDiscoveredDevice[]>([]);
   const [scannedOnce, setScannedOnce] = useState(false);
+  const [backendOnline, setBackendOnline] = useState(true);
 
   // User Mgmt State
   const [editingUser, setEditingUser] = useState<Partial<User> | null>(null);
@@ -172,6 +173,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
   const [testImageObj, setTestImageObj] = useState<string | null>(null);
 
   useEffect(() => {
+    checkBackendHealth().then(setBackendOnline);
+
     if (activeSection === 'storage-config' && !fileSystem) {
       fetchFileSystem().then(setFileSystem);
     }
@@ -689,10 +692,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ cameras, onUpdateCamera, 
                         />
                         <button 
                             onClick={runScan} 
-                            disabled={isScanning}
-                            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded text-sm disabled:opacity-50 whitespace-nowrap font-semibold"
+                            disabled={isScanning || !backendOnline}
+                            className={`px-4 py-1.5 rounded text-sm disabled:opacity-50 whitespace-nowrap font-semibold ${backendOnline ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-red-900 text-red-200 cursor-not-allowed border border-red-800'}`}
+                            title={!backendOnline ? "Servidor Backend Offline" : "Iniciar Scan"}
                         >
-                            {isScanning ? 'Escaneando...' : 'Escanear'}
+                            {isScanning ? 'Escaneando...' : backendOnline ? 'Escanear' : 'Servidor Offline'}
                         </button>
                      </div>
                  </div>

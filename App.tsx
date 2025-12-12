@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Camera, StorageStats, SystemConfig, SystemNotification, User } from './types';
-import { fetchCameras, addCamera, deleteCamera, fetchStorageStats, updateCamera, fetchSystemConfig, logAccessAttempt, fetchNotifications, markNotificationRead, triggerMockEvent, authenticateUser } from './services/mockCameraService';
+import { fetchCameras, addCamera, deleteCamera, fetchStorageStats, updateCamera, fetchSystemConfig, logAccessAttempt, fetchNotifications, markNotificationRead, triggerMockEvent, authenticateUser, checkBackendHealth } from './services/mockCameraService';
 import CameraCard from './components/CameraCard';
 import StorageWidget from './components/StorageWidget';
 import SettingsPanel from './components/SettingsPanel';
@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [backendOnline, setBackendOnline] = useState(true);
   
   // Auth State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -67,6 +68,9 @@ const App: React.FC = () => {
     }
 
     const initLoad = async () => {
+      const isOnline = await checkBackendHealth();
+      setBackendOnline(isOnline);
+      
       const sysConfig = await refreshData();
       const notifs = await fetchNotifications();
       setNotifications(notifs);
@@ -85,8 +89,10 @@ const App: React.FC = () => {
 
     // 2. Real-time Synchronization (Polling every 10s)
     // This ensures if you add a camera on PC, it appears on Mobile automatically.
-    const syncInterval = setInterval(() => {
-        if(isAuthenticated) refreshData();
+    const syncInterval = setInterval(async () => {
+        const isOnline = await checkBackendHealth();
+        setBackendOnline(isOnline);
+        if(isAuthenticated && isOnline) refreshData();
     }, 10000);
 
     return () => clearInterval(syncInterval);
@@ -94,13 +100,13 @@ const App: React.FC = () => {
 
   // Polling for Notifications (Faster)
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !backendOnline) return;
     const intervalId = setInterval(async () => {
        const notifs = await fetchNotifications();
        setNotifications(notifs);
     }, 5000); 
     return () => clearInterval(intervalId);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, backendOnline]);
 
   const handleUpdateCamera = async (updatedCamera: Camera) => {
     await updateCamera(updatedCamera);
@@ -196,7 +202,14 @@ const App: React.FC = () => {
               )}
               <div className="hidden sm:block">
                 <h1 className="text-xl font-bold tracking-tight text-white">{config?.appName || 'CamHome'}</h1>
-                <p className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Sistema de Vigilância</p>
+                <p className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold flex items-center gap-1">
+                   Sistema de Vigilância 
+                   {backendOnline ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 ml-1" title="Backend Online"></span>
+                   ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 ml-1 animate-pulse" title="Backend Offline"></span>
+                   )}
+                </p>
               </div>
             </div>
             
@@ -270,6 +283,22 @@ const App: React.FC = () => {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        
+        {!backendOnline && (
+           <div className="bg-red-900/30 border border-red-500/50 rounded-xl p-4 flex items-center gap-4 text-red-200 animate-pulse">
+               <div className="bg-red-900 p-2 rounded-full">
+                  <CogIcon className="w-6 h-6 text-red-400" />
+               </div>
+               <div>
+                  <h3 className="font-bold text-sm">Servidor Backend Offline</h3>
+                  <p className="text-xs mt-1">
+                     O núcleo do sistema (Node.js) não está respondendo. O scan de rede e salvamento de configurações não funcionarão.
+                     <br/>
+                     <span className="font-mono bg-black/30 px-1 rounded select-all cursor-text">sudo pm2 start ecosystem.config.js</span>
+                  </p>
+               </div>
+           </div>
+        )}
         
         {activeTab === 'dashboard' && (
           <>

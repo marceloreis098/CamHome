@@ -81,6 +81,16 @@ const smartFetch = async (endpoint: string, options: RequestInit = {}) => {
 
 // --- SERVICES (NOW CONNECTED TO BACKEND) ---
 
+export const checkBackendHealth = async (): Promise<boolean> => {
+    try {
+        // Tenta buscar config, se funcionar, backend está vivo
+        await smartFetch('/api/config');
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
+
 // USERS
 export const fetchUsers = async (): Promise<User[]> => {
   try {
@@ -206,6 +216,9 @@ export const scanNetworkForDevices = async (manualSubnet?: string): Promise<Disc
 
   } catch (error: any) {
     console.warn("Erro no scan:", error);
+    if (error.message.includes('fetch') || error.message.includes('HTTP')) {
+        throw new Error("O Backend parece estar offline. Verifique o servidor (sudo pm2 status).");
+    }
     throw error; // Let UI handle it
   }
 };
