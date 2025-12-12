@@ -21,16 +21,11 @@ app.use(express.json({ limit: '10mb' }));
 
 // --- LOGGING SETUP ---
 const LOG_DIR = path.join(__dirname, 'logs');
-if (!fs.existsSync(LOG_DIR)) {
-    fs.mkdirSync(LOG_DIR);
-}
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
 
-// --- DATA PERSISTENCE LAYER (JSON FILES) ---
+// --- DATA PERSISTENCE LAYER ---
 const DATA_DIR = path.join(__dirname, 'data');
-
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR);
-}
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
 const jsonDb = {
     read: (filename, defaultValue) => {
@@ -40,17 +35,15 @@ const jsonDb = {
             return defaultValue;
         }
         try {
-            const data = fs.readFileSync(filePath, 'utf8');
-            return JSON.parse(data);
+            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
         } catch (e) {
             console.error(`Error reading ${filename}:`, e);
             return defaultValue;
         }
     },
     write: (filename, data) => {
-        const filePath = path.join(DATA_DIR, filename);
         try {
-            fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+            fs.writeFileSync(path.join(DATA_DIR, filename), JSON.stringify(data, null, 2));
             return true;
         } catch (e) {
             console.error(`Error writing ${filename}:`, e);
@@ -60,14 +53,7 @@ const jsonDb = {
 };
 
 const DEFAULTS = {
-    users: [{
-        id: 'u1',
-        username: 'admin',
-        password: 'password', 
-        name: 'Administrador',
-        role: 'ADMIN',
-        createdAt: new Date()
-    }],
+    users: [{ id: 'u1', username: 'admin', password: 'password', name: 'Administrador', role: 'ADMIN', createdAt: new Date() }],
     config: {
         appName: 'CamHome',
         enableAuth: true,
@@ -81,359 +67,310 @@ const DEFAULTS = {
     cameras: []
 };
 
-// --- HELPERS (Network & Hardware) ---
+// --- NVR / RECORDING ENGINE ---
+const recorders = {}; // Stores active ffmpeg processes: { cameraId: { process, retryTimeout } }
 
+function sanitize(str) {
+    return str.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+}
+
+function getStreamUrlWithAuth(camera) {
+    let url = camera.streamUrl;
+    if (!url) return null;
+    if (camera.username && camera.password && !url.includes('@') && url.startsWith('rtsp://')) {
+        return url.replace('rtsp://', `rtsp://${camera.username}:${camera.password}@`);
+    }
+    return url;
+}
+
+function startRecording(camera) {
+    // 1. Check if configured and enabled
+    const config = jsonDb.read('config.json', DEFAULTS.config);
+    if (!config.recordingPath) return;
+
+    // 2. Stop existing if running (to restart/update)
+    if (recorders[camera.id]) {
+        stopRecording(camera.id);
+    }
+
+    if (camera.status !== 'ONLINE' && camera.status !== 'RECORDING') return;
+    const streamUrl = getStreamUrlWithAuth(camera);
+    if (!streamUrl) return;
+
+    // 3. Prepare Directory
+    const camFolder = path.join(config.recordingPath, sanitize(camera.name));
+    if (!fs.existsSync(camFolder)) {
+        try {
+            fs.mkdirSync(camFolder, { recursive: true });
+        } catch (e) {
+            console.error(`[NVR] Failed to create folder ${camFolder}:`, e);
+            return;
+        }
+    }
+
+    console.log(`[NVR] Starting recording for ${camera.name}...`);
+
+    // 4. Spawn FFmpeg
+    // Segments video into 10-minute chunks (600s) to avoid corruption and easier playback
+    const args = [
+        '-y',
+        '-rtsp_transport', 'tcp', // Force TCP for stability
+        '-i', streamUrl,
+        '-c', 'copy',             // Direct copy (no transcoding = low CPU usage)
+        '-map', '0',
+        '-f', 'segment',
+        '-segment_time', '600',   // 10 minutes
+        '-segment_format', 'mp4',
+        '-strftime', '1',
+        '-reset_timestamps', '1',
+        path.join(camFolder, '%Y-%m-%d_%H-%M-%S.mp4')
+    ];
+
+    const proc = spawn('ffmpeg', args);
+
+    recorders[camera.id] = {
+        process: proc,
+        startTime: Date.now()
+    };
+
+    // 5. Error Handling & Auto-Retry
+    proc.stderr.on('data', (data) => {
+        // FFmpeg is chatty on stderr, un-comment to debug
+        // console.log(`[FFmpeg ${camera.name}] ${data}`); 
+    });
+
+    proc.on('close', (code) => {
+        console.log(`[NVR] Recording stopped for ${camera.name} (Code ${code})`);
+        delete recorders[camera.id];
+        
+        // Auto-restart if it wasn't manually stopped and didn't crash instantly
+        const wasRunningLongEnough = (Date.now() - (recorders[camera.id]?.startTime || 0)) > 5000;
+        
+        if (code !== 0 || wasRunningLongEnough) {
+            console.log(`[NVR] Restarting ${camera.name} in 10s...`);
+            setTimeout(() => {
+                // Reload camera from DB to ensure it wasn't deleted
+                const currentCams = jsonDb.read('cameras.json', []);
+                const currentCam = currentCams.find(c => c.id === camera.id);
+                if (currentCam) startRecording(currentCam);
+            }, 10000);
+        }
+    });
+}
+
+function stopRecording(cameraId) {
+    if (recorders[cameraId]) {
+        console.log(`[NVR] Stopping recording for ${cameraId}`);
+        recorders[cameraId].process.kill('SIGTERM'); // Gentle kill
+        delete recorders[cameraId];
+    }
+}
+
+function initializeRecorder() {
+    const cameras = jsonDb.read('cameras.json', []);
+    console.log(`[NVR] Initializing ${cameras.length} cameras...`);
+    cameras.forEach(cam => {
+        startRecording(cam);
+    });
+}
+
+// --- HELPER FUNCTIONS ---
 const MAC_VENDORS = {
-    'e0:50:8b': 'Hikvision',
-    '00:40:8c': 'Axis',
-    '00:0f:7c': 'Dahua/Intelbras',
-    '38:af:29': 'Dahua/Intelbras',
-    'bc:32:5e': 'Dahua/Intelbras',
-    'a0:bd:1d': 'TP-Link',
-    '00:62:6e': 'Foscam',
-    '4c:e6:76': 'Buffalo',
-    'b0:c5:54': 'D-Link',
-    '00:1d:2d': 'Wyze',
-    '00:eb:d5': 'Tuya/Generic',
-    'dc:4f:22': 'Espressif (ESP32-Cam)',
-    '48:8f:4c': 'Vstarcam/Eye4',
-    '00:12:17': 'Cisco-Linksys',
-    '00:1b:11': 'D-Link',
-    '00:24:8c': 'Asus',
-    'd8:50:e6': 'Asus',
-    'b8:27:eb': 'Raspberry Pi',
-    'dc:a6:32': 'Raspberry Pi',
-    'e4:5f:01': 'Raspberry Pi',
-    '00:fc:04': 'Microseven'
+    'e0:50:8b': 'Hikvision', '00:40:8c': 'Axis', '00:0f:7c': 'Dahua',
+    'bc:32:5e': 'Dahua', 'a0:bd:1d': 'TP-Link', '00:62:6e': 'Foscam',
+    'b0:c5:54': 'D-Link', 'dc:4f:22': 'ESP32', 'b8:27:eb': 'RaspberryPi'
 };
-
-function getCidrSuffix(netmask) {
-    if (!netmask) return 24;
-    return netmask.split('.').map(Number)
-      .map(part => (part >>> 0).toString(2))
-      .join('')
-      .split('1').length - 1;
-}
-
-function calculateSubnet(ip, netmask) {
-    const ipParts = ip.split('.').map(Number);
-    const maskParts = netmask.split('.').map(Number);
-    const networkParts = ipParts.map((part, i) => part & maskParts[i]);
-    const suffix = getCidrSuffix(netmask);
-    return `${networkParts.join('.')}/${suffix}`;
-}
 
 function getLocalNetwork() {
     const interfaces = os.networkInterfaces();
-    let candidates = [];
-
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
-            if (iface.family === 'IPv4' && !iface.internal) {
-                if (iface.netmask) {
-                    const cidr = calculateSubnet(iface.address, iface.netmask);
-                    candidates.push({ ip: iface.address, cidr, name });
-                }
+            if (iface.family === 'IPv4' && !iface.internal && iface.address.startsWith('192.168')) {
+                return `${iface.address.substring(0, iface.address.lastIndexOf('.'))}.0/24`;
             }
         }
     }
-    
-    // Prioritize standard LAN subnets over Docker/Virtual (172.x, etc)
-    const best = candidates.find(c => c.ip.startsWith('192.168')) || 
-                 candidates.find(c => c.ip.startsWith('10.')) ||
-                 candidates[0];
-
-    return best ? best.cidr : '192.168.0.0/24';
-}
-
-function getArpTable() {
-    try {
-        const arpContent = fs.readFileSync('/proc/net/arp', 'utf8');
-        const lines = arpContent.split('\n');
-        const arpMap = {};
-        for (let i = 1; i < lines.length; i++) {
-            const parts = lines[i].trim().split(/\s+/);
-            if (parts.length > 4) {
-                const ip = parts[0];
-                const mac = parts[3];
-                if (mac && mac !== '00:00:00:00:00:00') arpMap[ip] = mac;
-            }
-        }
-        return arpMap;
-    } catch (e) {
-        return {};
-    }
+    return '192.168.0.0/24';
 }
 
 function identifyVendor(mac) {
-    if (!mac || mac === '00:00:00:00:00:00') return 'Desconhecido';
-    const prefix = mac.substring(0, 8).toLowerCase();
-    return MAC_VENDORS[prefix] || 'Genérico';
+    if (!mac) return 'Desconhecido';
+    return MAC_VENDORS[mac.substring(0, 8).toLowerCase()] || 'Genérico';
 }
 
-async function getDirRecursive(dirPath, currentDepth = 0, maxDepth = 2) {
-    if (currentDepth > maxDepth) return [];
-    try {
-        await fs.promises.access(dirPath, fs.constants.R_OK);
-        const stats = await fs.promises.stat(dirPath);
-        if (!stats.isDirectory()) return [];
-    } catch (e) { return []; }
-
-    let children = [];
+async function getDirRecursive(dirPath, currentDepth = 0) {
+    if (currentDepth > 2) return [];
     try {
         const dirents = await fs.promises.readdir(dirPath, { withFileTypes: true });
-        for (const dirent of dirents) {
+        return Promise.all(dirents.map(async (dirent) => {
             const fullPath = path.join(dirPath, dirent.name);
-            let node = {
-                id: fullPath,
-                name: dirent.name,
-                path: fullPath,
-                type: 'file',
-                size: '-'
-            };
-
-            if (dirent.isDirectory()) {
-                node.type = 'folder';
-                if (currentDepth === 0 || ['drive','disk','usb','mnt'].some(k => dirent.name.includes(k))) {
-                    node.type = 'drive';
-                }
-                node.children = await getDirRecursive(fullPath, currentDepth + 1, maxDepth);
-                children.push(node);
-            } else {
-                try {
-                   const fStat = await fs.promises.stat(fullPath);
-                   node.size = (fStat.size / (1024 * 1024)).toFixed(2) + ' MB';
-                   children.push(node);
-                } catch(e) {}
-            }
-        }
-    } catch (e) {}
-    return children;
+            const node = { id: fullPath, name: dirent.name, path: fullPath, type: dirent.isDirectory() ? 'folder' : 'file' };
+            if (dirent.isDirectory()) node.children = await getDirRecursive(fullPath, currentDepth + 1);
+            return node;
+        }));
+    } catch { return []; }
 }
 
 // --- API ROUTES ---
 
-app.get('/api/cameras', (req, res) => {
-    const data = jsonDb.read('cameras.json', DEFAULTS.cameras);
-    res.json(data);
-});
-
+// Cameras
+app.get('/api/cameras', (req, res) => res.json(jsonDb.read('cameras.json', DEFAULTS.cameras)));
 app.post('/api/cameras', (req, res) => {
-    const success = jsonDb.write('cameras.json', req.body);
-    if (success) res.json({ success: true });
-    else res.status(500).json({ error: 'Failed to save cameras' });
+    const oldCams = jsonDb.read('cameras.json', []);
+    const newCams = req.body;
+    
+    // Detect changes to restart recordings
+    newCams.forEach(newCam => {
+        const oldCam = oldCams.find(c => c.id === newCam.id);
+        // Restart if stream url changed or if it was offline and now online
+        if (!oldCam || oldCam.streamUrl !== newCam.streamUrl || newCam.status !== oldCam.status) {
+            startRecording(newCam);
+        }
+    });
+    
+    // Stop deleted cameras
+    oldCams.forEach(oldCam => {
+        if (!newCams.find(c => c.id === oldCam.id)) stopRecording(oldCam.id);
+    });
+
+    jsonDb.write('cameras.json', newCams);
+    res.json({ success: true });
 });
 
-app.get('/api/users', (req, res) => {
-    const data = jsonDb.read('users.json', DEFAULTS.users);
-    res.json(data);
-});
+// Recordings
+app.get('/api/recordings', async (req, res) => {
+    const config = jsonDb.read('config.json', DEFAULTS.config);
+    const recordings = [];
+    const recPath = config.recordingPath;
 
-app.post('/api/users', (req, res) => {
-    const success = jsonDb.write('users.json', req.body);
-    if (success) res.json({ success: true });
-    else res.status(500).json({ error: 'Failed to save users' });
-});
-
-app.get('/api/config', (req, res) => {
-    const data = jsonDb.read('config.json', DEFAULTS.config);
-    res.json(data);
-});
-
-app.post('/api/config', (req, res) => {
-    const current = jsonDb.read('config.json', DEFAULTS.config);
-    const updated = { ...current, ...req.body };
-    const success = jsonDb.write('config.json', updated);
-    if (success) res.json({ success: true });
-    else res.status(500).json({ error: 'Failed to save config' });
-});
-
-// PROXY & RTSP
-app.get('/api/proxy', async (req, res) => {
-    const { url, username, password } = req.query;
-    if (!url) return res.status(400).send('URL missing');
+    if (!fs.existsSync(recPath)) return res.json([]);
 
     try {
-        const options = { 
-            method: 'GET',
-            headers: {},
-            signal: AbortSignal.timeout(5000) 
-        };
-
-        if (username && password) {
-            const auth = Buffer.from(`${username}:${password}`).toString('base64');
-            options.headers['Authorization'] = `Basic ${auth}`;
+        const camFolders = await fs.promises.readdir(recPath, { withFileTypes: true });
+        for (const folder of camFolders) {
+            if (!folder.isDirectory()) continue;
+            
+            const folderPath = path.join(recPath, folder.name);
+            const files = await fs.promises.readdir(folderPath);
+            
+            for (const file of files) {
+                if (!file.endsWith('.mp4')) continue;
+                
+                // Parse date from filename: YYYY-MM-DD_HH-MM-SS.mp4
+                const nameParts = file.replace('.mp4', '').split('_');
+                if (nameParts.length < 2) continue;
+                
+                // Use file stats for robust time
+                const stat = fs.statSync(path.join(folderPath, file));
+                
+                recordings.push({
+                    id: file,
+                    cameraId: folder.name, // Using folder name as proxy for ID
+                    cameraName: folder.name.replace(/_/g, ' ').toUpperCase(),
+                    timestamp: stat.birthtime,
+                    thumbnailUrl: '', // Could generate thumbnail with ffmpeg later
+                    type: 'video',
+                    aiTags: [],
+                    size: (stat.size / (1024*1024)).toFixed(1) + ' MB',
+                    path: path.join(folderPath, file) // Internal use
+                });
+            }
         }
-
-        const response = await fetch(url, options);
-
-        if (!response.ok) {
-            return res.status(response.status).send(`Camera returned ${response.status}`);
-        }
-
-        const contentType = response.headers.get('content-type');
-        if (contentType) res.set('Content-Type', contentType);
-
-        const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        res.send(buffer);
-
+        // Sort newest first
+        recordings.sort((a, b) => b.timestamp - a.timestamp);
+        res.json(recordings);
     } catch (e) {
-        res.status(502).send("Failed to reach camera: " + e.message);
+        console.error(e);
+        res.status(500).json({ error: 'Failed to scan recordings' });
+    }
+});
+
+// Config & Users
+app.get('/api/users', (req, res) => res.json(jsonDb.read('users.json', DEFAULTS.users)));
+app.post('/api/users', (req, res) => { jsonDb.write('users.json', req.body); res.json({success:true}); });
+app.get('/api/config', (req, res) => res.json(jsonDb.read('config.json', DEFAULTS.config)));
+app.post('/api/config', (req, res) => { 
+    jsonDb.write('config.json', { ...jsonDb.read('config.json', DEFAULTS.config), ...req.body }); 
+    // Restart all recordings if path changed
+    if (req.body.recordingPath) initializeRecorder();
+    res.json({success:true}); 
+});
+
+// Proxy
+app.get('/api/proxy', async (req, res) => {
+    try {
+        const { url, username, password } = req.query;
+        if (!url) throw new Error("URL missing");
+        
+        const headers = {};
+        if (username) headers['Authorization'] = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+        
+        const response = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
+        if (!response.ok) throw new Error(`Cam returned ${response.status}`);
+        
+        const buf = await response.arrayBuffer();
+        res.set('Content-Type', response.headers.get('content-type') || 'image/jpeg');
+        res.send(Buffer.from(buf));
+    } catch (e) {
+        res.status(502).send(e.message);
     }
 });
 
 app.get('/api/rtsp-snapshot', (req, res) => {
     let { url } = req.query;
     if (!url) return res.status(400).send('RTSP URL missing');
-
-    const args = ['-y', '-rtsp_transport', 'tcp', '-i', url, '-f', 'image2', '-vframes', '1', '-q:v', '5', '-'];
-    const ffmpeg = spawn('ffmpeg', args);
-
+    const ffmpeg = spawn('ffmpeg', ['-y', '-rtsp_transport', 'tcp', '-i', url, '-f', 'image2', '-vframes', '1', '-q:v', '5', '-']);
     res.contentType('image/jpeg');
     ffmpeg.stdout.pipe(res);
-
-    ffmpeg.on('error', (err) => {
-        if (!res.headersSent) res.status(500).send('FFmpeg failed.');
-    });
 });
 
-app.post('/api/storage/format', async (req, res) => {
-    const { path: targetPath } = req.body;
-    if (!targetPath) return res.status(400).json({ error: "Caminho não especificado." });
-
-    const forbiddenPaths = ['/', '/bin', '/boot', '/dev', '/etc', '/home', '/lib', '/proc', '/root', '/run', '/sbin', '/sys', '/usr', '/var'];
-    if (forbiddenPaths.includes(targetPath) || targetPath === os.homedir()) {
-         return res.status(403).json({ error: "Ação bloqueada: Caminho protegido." });
-    }
-
-    try {
-        if (fs.existsSync(targetPath)) {
-             await fs.promises.rm(targetPath, { recursive: true, force: true });
-             await fs.promises.mkdir(targetPath, { recursive: true });
-        }
-        res.json({ success: true, message: "Formatado com sucesso." });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
+// Storage
 app.get('/api/storage/tree', async (req, res) => {
+    res.json({ id: 'root', name: 'mnt', type: 'folder', path: '/mnt', children: await getDirRecursive('/mnt'), isOpen: true });
+});
+app.post('/api/storage/format', async (req, res) => {
+    // Simple delete all in path
+    const { path: p } = req.body;
+    if (!p || p === '/') return res.status(403).json({error: "Invalid path"});
     try {
-        const tree = await getDirRecursive('/mnt', 0, 2);
-        res.json({ id: 'root', name: 'Montagens (mnt)', type: 'folder', path: '/mnt', children: tree, isOpen: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+        await fs.promises.rm(p, { recursive: true, force: true });
+        await fs.promises.mkdir(p, { recursive: true });
+        res.json({ success: true });
+    } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// NETWORK SCAN
+// Scan
 app.get('/api/scan', (req, res) => {
-    let subnet = req.query.subnet;
-    if (!subnet) subnet = getLocalNetwork();
-    
-    const arpTable = getArpTable();
-    console.log(`[SCAN] Iniciando varredura na rede: ${subnet}`);
-
-    // Increased maxBuffer to 1MB to prevent crashes on large outputs
-    exec(`nmap -sn ${subnet}`, { timeout: 25000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
-        if (error) {
-            console.warn(`[SCAN] Nmap falhou (Code: ${error.code}). Usando ARP. Msg: ${error.message}`);
-            const devices = Object.keys(arpTable).map(ip => ({
-                ip,
-                mac: arpTable[ip],
-                manufacturer: identifyVendor(arpTable[ip]),
-                model: 'Unknown (ARP)',
-                isAdded: false
-            }));
-            return res.json(devices);
-        }
-
-        const lines = stdout.split('\n');
+    const subnet = req.query.subnet || getLocalNetwork();
+    console.log(`Scanning ${subnet}...`);
+    exec(`nmap -sn ${subnet}`, { timeout: 20000 }, (err, stdout) => {
+        // Simple parser
         const devices = [];
+        const lines = stdout.split('\n');
         let currentIp = null;
-        let currentName = null;
-
-        lines.forEach(line => {
-            if (line.startsWith('Nmap scan report for')) {
-                // Save previous if exists (handle devices without MAC line)
-                if (currentIp) {
-                     devices.push({
-                        ip: currentIp,
-                        mac: '00:00:00:00:00:00',
-                        manufacturer: 'Desconhecido',
-                        model: currentName || 'Dispositivo de Rede',
-                        isAdded: false
-                    });
-                }
-                
-                const parts = line.split(' ');
-                const ipPart = parts[parts.length - 1].replace('(', '').replace(')', '');
-                currentIp = ipPart;
-                currentName = parts.length > 5 ? parts.slice(4, parts.length - 1).join(' ') : 'Unknown';
-            }
-            else if (line.includes('MAC Address:') && currentIp) {
-                const parts = line.split('MAC Address: ');
-                const macPart = parts[1].split(' ');
-                const mac = macPart[0];
-                const vendorFromNmap = line.substring(line.indexOf('(') + 1, line.indexOf(')'));
-                
-                devices.push({
-                    ip: currentIp,
-                    mac: mac,
-                    manufacturer: vendorFromNmap || identifyVendor(mac),
-                    model: currentName !== 'Unknown' ? currentName : 'Network Device',
-                    isAdded: false
-                });
-                currentIp = null;
-            }
-        });
-
-        // Add last item
-        if (currentIp) {
-             devices.push({
-                ip: currentIp,
-                mac: '00:00:00:00:00:00',
-                manufacturer: 'Desconhecido',
-                model: currentName || 'Dispositivo de Rede',
-                isAdded: false
-            });
-        }
-
-        // Merge with ARP to catch anything Nmap missed
-        Object.keys(arpTable).forEach(ip => {
-            if (!devices.find(d => d.ip === ip)) {
-                devices.push({
-                    ip,
-                    mac: arpTable[ip],
-                    manufacturer: identifyVendor(arpTable[ip]),
-                    model: 'Device (ARP)',
-                    isAdded: false
-                });
-            }
-        });
         
+        lines.forEach(line => {
+             if(line.includes('Nmap scan report')) currentIp = line.split(' ').pop().replace(/[()]/g, '');
+             else if(line.includes('MAC Address') && currentIp) {
+                 const mac = line.split('MAC Address: ')[1].split(' ')[0];
+                 devices.push({ ip: currentIp, mac, manufacturer: identifyVendor(mac), model: 'Network Cam', isAdded: false });
+                 currentIp = null;
+             }
+        });
         res.json(devices);
     });
 });
 
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'dist', 'index.html')));
 
-// START SERVER WITH ERROR HANDLING
 const server = app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-    console.log(`Local Network: ${getLocalNetwork()}`);
+    initializeRecorder(); // Start NVR
 });
 
 server.on('error', (e) => {
     if (e.code === 'EADDRINUSE') {
-        console.error(`\n❌ ERRO FATAL: A porta ${PORT} já está em uso!`);
-        console.error(`Provavelmente você já tem um 'node server.js' rodando em outro terminal ou em background.`);
-        console.error(`Execute: sudo lsof -i :${PORT} para encontrar o processo e matá-lo.\n`);
+        console.error(`Port ${PORT} in use. Kill process using 'sudo lsof -i :${PORT}'`);
         process.exit(1);
-    } else {
-        console.error('Server Error:', e);
     }
 });

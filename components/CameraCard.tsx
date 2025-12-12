@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Camera, CameraStatus } from '../types';
 import { SignalIcon, SparklesIcon, PhotoIcon } from './Icons';
 import { analyzeFrame } from '../services/geminiService';
-import { urlToBase64 } from '../services/mockCameraService';
 
 interface CameraCardProps {
   camera: Camera;

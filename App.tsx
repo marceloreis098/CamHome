@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Camera, StorageStats, SystemConfig, SystemNotification, User } from './types';
-import { fetchCameras, addCamera, deleteCamera, fetchStorageStats, updateCamera, fetchSystemConfig, logAccessAttempt, fetchNotifications, markNotificationRead, triggerMockEvent, authenticateUser, checkBackendHealth } from './services/mockCameraService';
+import { fetchCameras, addCamera, deleteCamera, fetchStorageStats, updateCamera, fetchSystemConfig, logAccessAttempt, fetchNotifications, markNotificationRead, authenticateUser, checkBackendHealth } from './services/mockCameraService';
 import CameraCard from './components/CameraCard';
 import StorageWidget from './components/StorageWidget';
 import SettingsPanel from './components/SettingsPanel';
