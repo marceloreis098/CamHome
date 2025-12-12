@@ -68,9 +68,11 @@ export interface RecordedMedia {
   cameraName: string;
   timestamp: Date;
   thumbnailUrl: string;
+  videoUrl?: string; // Link to play video
   type: 'image' | 'video';
   aiTags: string[]; // e.g. "Person", "Dog", "Vehicle"
   userTags?: string[]; // Manual overrides
+  size?: string;
 }
 
 export interface FileNode {

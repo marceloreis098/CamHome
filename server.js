@@ -68,7 +68,7 @@ const DEFAULTS = {
 };
 
 // --- NVR / RECORDING ENGINE ---
-const recorders = {}; // Stores active ffmpeg processes: { cameraId: { process, retryTimeout } }
+const recorders = {}; 
 
 function sanitize(str) {
     return str.replace(/[^a-z0-9]/gi, '_').toLowerCase();
@@ -84,11 +84,9 @@ function getStreamUrlWithAuth(camera) {
 }
 
 function startRecording(camera) {
-    // 1. Check if configured and enabled
     const config = jsonDb.read('config.json', DEFAULTS.config);
     if (!config.recordingPath) return;
 
-    // 2. Stop existing if running (to restart/update)
     if (recorders[camera.id]) {
         stopRecording(camera.id);
     }
@@ -97,7 +95,6 @@ function startRecording(camera) {
     const streamUrl = getStreamUrlWithAuth(camera);
     if (!streamUrl) return;
 
-    // 3. Prepare Directory
     const camFolder = path.join(config.recordingPath, sanitize(camera.name));
     if (!fs.existsSync(camFolder)) {
         try {
@@ -110,13 +107,11 @@ function startRecording(camera) {
 
     console.log(`[NVR] Starting recording for ${camera.name}...`);
 
-    // 4. Spawn FFmpeg
-    // Segments video into 10-minute chunks (600s) to avoid corruption and easier playback
     const args = [
         '-y',
-        '-rtsp_transport', 'tcp', // Force TCP for stability
+        '-rtsp_transport', 'tcp', 
         '-i', streamUrl,
-        '-c', 'copy',             // Direct copy (no transcoding = low CPU usage)
+        '-c', 'copy',             
         '-map', '0',
         '-f', 'segment',
         '-segment_time', '600',   // 10 minutes
@@ -133,35 +128,26 @@ function startRecording(camera) {
         startTime: Date.now()
     };
 
-    // 5. Error Handling & Auto-Retry
-    proc.stderr.on('data', (data) => {
-        // FFmpeg is chatty on stderr, un-comment to debug
-        // console.log(`[FFmpeg ${camera.name}] ${data}`); 
-    });
-
     proc.on('close', (code) => {
         console.log(`[NVR] Recording stopped for ${camera.name} (Code ${code})`);
         delete recorders[camera.id];
         
-        // Auto-restart if it wasn't manually stopped and didn't crash instantly
-        const wasRunningLongEnough = (Date.now() - (recorders[camera.id]?.startTime || 0)) > 5000;
+        const wasRunningLongEnough = (Date.now() - (recorders[camera.id]?.startTime || 0)) > 10000;
         
         if (code !== 0 || wasRunningLongEnough) {
-            console.log(`[NVR] Restarting ${camera.name} in 10s...`);
+            console.log(`[NVR] Restarting ${camera.name} in 15s...`);
             setTimeout(() => {
-                // Reload camera from DB to ensure it wasn't deleted
                 const currentCams = jsonDb.read('cameras.json', []);
                 const currentCam = currentCams.find(c => c.id === camera.id);
                 if (currentCam) startRecording(currentCam);
-            }, 10000);
+            }, 15000);
         }
     });
 }
 
 function stopRecording(cameraId) {
     if (recorders[cameraId]) {
-        console.log(`[NVR] Stopping recording for ${cameraId}`);
-        recorders[cameraId].process.kill('SIGTERM'); // Gentle kill
+        recorders[cameraId].process.kill('SIGTERM'); 
         delete recorders[cameraId];
     }
 }
@@ -213,22 +199,59 @@ async function getDirRecursive(dirPath, currentDepth = 0) {
 
 // --- API ROUTES ---
 
-// Cameras
+// 1. PLAYBACK & THUMBNAILS
+app.get('/api/playback/:cam/:file', (req, res) => {
+    const config = jsonDb.read('config.json', DEFAULTS.config);
+    const { cam, file } = req.params;
+    
+    // Security sanitization
+    const safeCam = sanitize(cam);
+    const safeFile = path.basename(file);
+    
+    const filePath = path.join(config.recordingPath, safeCam, safeFile);
+    
+    if (!fs.existsSync(filePath)) return res.status(404).send('File not found');
+    res.sendFile(filePath);
+});
+
+app.get('/api/playback/:cam/:file/thumb', (req, res) => {
+    const config = jsonDb.read('config.json', DEFAULTS.config);
+    const { cam, file } = req.params;
+    
+    const safeCam = sanitize(cam);
+    const safeFile = path.basename(file);
+    const videoPath = path.join(config.recordingPath, safeCam, safeFile);
+    const thumbPath = path.join(config.recordingPath, safeCam, safeFile + '.jpg');
+
+    if (fs.existsSync(thumbPath)) {
+        return res.sendFile(thumbPath);
+    } 
+    
+    if (fs.existsSync(videoPath)) {
+        // Generate thumb on the fly
+        exec(`ffmpeg -i "${videoPath}" -ss 00:00:01 -vframes 1 "${thumbPath}"`, (err) => {
+            if (!err && fs.existsSync(thumbPath)) res.sendFile(thumbPath);
+            else res.status(500).send('Generating...');
+        });
+    } else {
+        res.status(404).send('Video not found');
+    }
+});
+
+
+// 2. CAMERAS
 app.get('/api/cameras', (req, res) => res.json(jsonDb.read('cameras.json', DEFAULTS.cameras)));
 app.post('/api/cameras', (req, res) => {
     const oldCams = jsonDb.read('cameras.json', []);
     const newCams = req.body;
     
-    // Detect changes to restart recordings
     newCams.forEach(newCam => {
         const oldCam = oldCams.find(c => c.id === newCam.id);
-        // Restart if stream url changed or if it was offline and now online
         if (!oldCam || oldCam.streamUrl !== newCam.streamUrl || newCam.status !== oldCam.status) {
             startRecording(newCam);
         }
     });
     
-    // Stop deleted cameras
     oldCams.forEach(oldCam => {
         if (!newCams.find(c => c.id === oldCam.id)) stopRecording(oldCam.id);
     });
@@ -237,7 +260,7 @@ app.post('/api/cameras', (req, res) => {
     res.json({ success: true });
 });
 
-// Recordings
+// 3. RECORDINGS LIST
 app.get('/api/recordings', async (req, res) => {
     const config = jsonDb.read('config.json', DEFAULTS.config);
     const recordings = [];
@@ -256,27 +279,22 @@ app.get('/api/recordings', async (req, res) => {
             for (const file of files) {
                 if (!file.endsWith('.mp4')) continue;
                 
-                // Parse date from filename: YYYY-MM-DD_HH-MM-SS.mp4
-                const nameParts = file.replace('.mp4', '').split('_');
-                if (nameParts.length < 2) continue;
-                
-                // Use file stats for robust time
                 const stat = fs.statSync(path.join(folderPath, file));
                 
                 recordings.push({
                     id: file,
-                    cameraId: folder.name, // Using folder name as proxy for ID
+                    cameraId: folder.name, 
                     cameraName: folder.name.replace(/_/g, ' ').toUpperCase(),
                     timestamp: stat.birthtime,
-                    thumbnailUrl: '', // Could generate thumbnail with ffmpeg later
+                    // URL scheme: /api/playback/<folder>/<filename>
+                    videoUrl: `/api/playback/${folder.name}/${file}`,
+                    thumbnailUrl: `/api/playback/${folder.name}/${file}/thumb`,
                     type: 'video',
                     aiTags: [],
-                    size: (stat.size / (1024*1024)).toFixed(1) + ' MB',
-                    path: path.join(folderPath, file) // Internal use
+                    size: (stat.size / (1024*1024)).toFixed(1) + ' MB'
                 });
             }
         }
-        // Sort newest first
         recordings.sort((a, b) => b.timestamp - a.timestamp);
         res.json(recordings);
     } catch (e) {
@@ -291,7 +309,6 @@ app.post('/api/users', (req, res) => { jsonDb.write('users.json', req.body); res
 app.get('/api/config', (req, res) => res.json(jsonDb.read('config.json', DEFAULTS.config)));
 app.post('/api/config', (req, res) => { 
     jsonDb.write('config.json', { ...jsonDb.read('config.json', DEFAULTS.config), ...req.body }); 
-    // Restart all recordings if path changed
     if (req.body.recordingPath) initializeRecorder();
     res.json({success:true}); 
 });
@@ -329,7 +346,6 @@ app.get('/api/storage/tree', async (req, res) => {
     res.json({ id: 'root', name: 'mnt', type: 'folder', path: '/mnt', children: await getDirRecursive('/mnt'), isOpen: true });
 });
 app.post('/api/storage/format', async (req, res) => {
-    // Simple delete all in path
     const { path: p } = req.body;
     if (!p || p === '/') return res.status(403).json({error: "Invalid path"});
     try {
@@ -344,7 +360,6 @@ app.get('/api/scan', (req, res) => {
     const subnet = req.query.subnet || getLocalNetwork();
     console.log(`Scanning ${subnet}...`);
     exec(`nmap -sn ${subnet}`, { timeout: 20000 }, (err, stdout) => {
-        // Simple parser
         const devices = [];
         const lines = stdout.split('\n');
         let currentIp = null;
